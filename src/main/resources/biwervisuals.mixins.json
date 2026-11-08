@@ -1,0 +1,15 @@
+{
+	"required": true,
+	"minVersion": "0.8",
+	"package": "com.biwer.biwervisuals.mixin",
+	"compatibilityLevel": "JAVA_21",
+	"mixins": [],
+	"client": [
+		"ClientClockManagerMixin",
+		"LevelMixin",
+		"HeldItemRendererMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	}
+}

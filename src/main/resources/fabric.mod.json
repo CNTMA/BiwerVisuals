@@ -1,0 +1,34 @@
+{
+	"schemaVersion": 1,
+	"id": "biwervisuals",
+	"version": "${version}",
+	"name": "BiwerVisuals",
+	"description": "Visual mod",
+	"authors": [
+		"Me!"
+	],
+	"contact": {
+		"homepage": "https://fabricmc.net/",
+		"sources": "https://github.com/FabricMC/fabric-example-mod"
+	},
+	"license": "CC0-1.0",
+	"icon": "assets/biwervisuals/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"com.biwer.biwervisuals.BiwerVisuals"
+		],
+		"client": [
+			"com.biwer.biwervisuals.BiwerVisualsClient"
+		]
+	},
+	"mixins": [
+		"biwervisuals.mixins.json"
+	],
+	"depends": {
+		"fabricloader": ">=0.20.1",
+		"minecraft": "~26.1",
+		"java": ">=25",
+		"fabric-api": "*"
+	}
+}

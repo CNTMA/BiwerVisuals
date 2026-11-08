@@ -7,7 +7,7 @@
 	"client": [
 		"ClientClockManagerMixin",
 		"LevelMixin",
-		"HeldItemRendererMixin"
+		"HeldItemRendererMixin",
 	],
 	"injectors": {
 		"defaultRequire": 1

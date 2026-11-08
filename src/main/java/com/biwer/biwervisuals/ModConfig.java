@@ -1,4 +1,6 @@
 package com.biwer.biwervisuals;
+import java.util.HashMap;
+import java.util.Map;
 
 public class ModConfig {
     public boolean ambienceEnabled = false;
@@ -64,4 +66,6 @@ public class ModConfig {
     public boolean tagsPlayers = true;
     public boolean tagsMobs = true;
     public boolean tagsAnimals = false;
+    // Бинды: имя функции -> код клавиши (GLFW)
+    public Map<String, Integer> binds = new HashMap<>();
 }

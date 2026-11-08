@@ -23,6 +23,7 @@ import org.lwjgl.glfw.GLFW;
 import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
+import java.lang.reflect.Field;
 import java.util.Map;
 
 public class BiwerVisualsClient implements ClientModInitializer {
@@ -51,6 +52,10 @@ public class BiwerVisualsClient implements ClientModInitializer {
 
         // 3. Инициализация менеджера биндов
         BindManager.init();
+
+        Fly.init();
+
+        Sprint.init();
 
         // 4. Загрузка биндов из конфига при старте
         for (Map.Entry<String, Integer> entry : CONFIG.binds.entrySet()) {
@@ -108,9 +113,11 @@ public class BiwerVisualsClient implements ClientModInitializer {
             }
         });
 
-        // 6. Обработка команд
+        // 6. Обработка команд через ALLOW_CHAT
         ClientSendMessageEvents.ALLOW_CHAT.register((message) -> {
             if (message.startsWith(".")) {
+                clearChatInput();
+
                 // Конфиги
                 if (message.startsWith(".cfg save ")) {
                     String name = message.substring(".cfg save ".length()).trim();
@@ -127,20 +134,31 @@ public class BiwerVisualsClient implements ClientModInitializer {
                     return false;
                 }
 
-                // --- БИНДЫ ---
+                // Бинды
                 if (message.startsWith(".bind add ")) {
                     String[] parts = message.split(" ");
                     if (parts.length >= 4) {
-                        String func = parts[2];
+                        String func = parts[2].toLowerCase();
                         String keyName = parts[3].toUpperCase();
                         int keyCode = getKeyCode(keyName);
 
                         if (keyCode != -1) {
-                            BindManager.addBind(func, keyCode);
-                            if (Minecraft.getInstance().player != null) {
-                                Minecraft.getInstance().player.sendSystemMessage(
-                                        Component.literal("§a[Bind] Функция §e" + func + " §aуспешно привязана к клавише §e" + keyName)
-                                );
+                            boolean success = BindManager.addBind(func, keyCode);
+                            if (success) {
+                                if (Minecraft.getInstance().player != null) {
+                                    Minecraft.getInstance().player.sendSystemMessage(
+                                            Component.literal("§a[Bind] Функция §e" + func + " §aуспешно привязана к клавише §e" + keyName)
+                                    );
+                                }
+                            } else {
+                                if (Minecraft.getInstance().player != null) {
+                                    Minecraft.getInstance().player.sendSystemMessage(
+                                            Component.literal("§c[Bind] Функция §e" + func + " §cне найдена!")
+                                    );
+                                    Minecraft.getInstance().player.sendSystemMessage(
+                                            Component.literal("§cДоступные функции: §e" + String.join(", ", BindManager.getAvailableFunctions()))
+                                    );
+                                }
                             }
                         } else {
                             if (Minecraft.getInstance().player != null) {
@@ -154,11 +172,10 @@ public class BiwerVisualsClient implements ClientModInitializer {
                             Minecraft.getInstance().player.sendSystemMessage(
                                     Component.literal("§c[Bind] Используйте: §e.bind add <функция> <клавиша>")
                             );
+                            Minecraft.getInstance().player.sendSystemMessage(
+                                    Component.literal("§cДоступные функции: §e" + String.join(", ", BindManager.getAvailableFunctions()))
+                            );
                         }
-                    }
-                    // Закрываем чат, чтобы поле ввода очистилось
-                    if (Minecraft.getInstance().screen instanceof net.minecraft.client.gui.screens.ChatScreen) {
-                        Minecraft.getInstance().setScreen(null);
                     }
                     return false;
                 }
@@ -166,7 +183,7 @@ public class BiwerVisualsClient implements ClientModInitializer {
                 if (message.startsWith(".bind remove ")) {
                     String[] parts = message.split(" ");
                     if (parts.length >= 3) {
-                        String func = parts[2];
+                        String func = parts[2].toLowerCase();
                         BindManager.removeBind(func);
                         if (Minecraft.getInstance().player != null) {
                             Minecraft.getInstance().player.sendSystemMessage(
@@ -180,26 +197,43 @@ public class BiwerVisualsClient implements ClientModInitializer {
                             );
                         }
                     }
-                    // Закрываем чат, чтобы поле ввода очистилось
-                    if (Minecraft.getInstance().screen instanceof net.minecraft.client.gui.screens.ChatScreen) {
-                        Minecraft.getInstance().setScreen(null);
+                    return false;
+                }
+
+                if (message.equalsIgnoreCase(".bind list")) {
+                    if (Minecraft.getInstance().player != null) {
+                        Minecraft.getInstance().player.sendSystemMessage(Component.literal("§e[Bind] Доступные функции:"));
+                        for (String func : BindManager.getAvailableFunctions()) {
+                            Minecraft.getInstance().player.sendSystemMessage(Component.literal("§7- §e" + func));
+                        }
                     }
                     return false;
                 }
 
-                // Подсказка для остальных команд
+                // Подсказка для неизвестных команд
                 if (Minecraft.getInstance().player != null) {
-                    Minecraft.getInstance().player.sendSystemMessage(Component.literal("§c[BiwerVisuals] Доступные команды:"));
-                    Minecraft.getInstance().player.sendSystemMessage(Component.literal("§e.cfg save <имя> §7- сохранить конфиг"));
-                    Minecraft.getInstance().player.sendSystemMessage(Component.literal("§e.cfg load <имя> §7- загрузить конфиг"));
-                    Minecraft.getInstance().player.sendSystemMessage(Component.literal("§e.cfg dir §7- открыть папку конфигов"));
-                    Minecraft.getInstance().player.sendSystemMessage(Component.literal("§e.bind add <функция> <клавиша> §7- привязать клавишу"));
-                    Minecraft.getInstance().player.sendSystemMessage(Component.literal("§e.bind remove <функция> §7- удалить бинд"));
+                    Minecraft.getInstance().player.sendSystemMessage(Component.literal("§c[BiwerVisuals] Неизвестная команда. Используйте .cfg или .bind"));
                 }
                 return false;
             }
             return true;
         });
+    }
+
+    // Принудительная очистка поля ввода через рефлексию
+    private static void clearChatInput() {
+        if (Minecraft.getInstance().screen instanceof net.minecraft.client.gui.screens.ChatScreen chatScreen) {
+            try {
+                Field inputField = chatScreen.getClass().getDeclaredField("input");
+                inputField.setAccessible(true);
+                Object input = inputField.get(chatScreen);
+                if (input instanceof net.minecraft.client.gui.components.EditBox editBox) {
+                    editBox.setValue("");
+                }
+            } catch (Exception e) {
+                Minecraft.getInstance().setScreen(null);
+            }
+        }
     }
 
     // Поиск цели для KillAura
@@ -313,13 +347,10 @@ public class BiwerVisualsClient implements ClientModInitializer {
             if (file.exists()) {
                 try (FileReader reader = new FileReader(file)) {
                     CONFIG = GSON.fromJson(reader, ModConfig.class);
-
-                    // Перезагружаем бинды из нового конфига
                     BindManager.clearAll();
                     for (Map.Entry<String, Integer> entry : CONFIG.binds.entrySet()) {
                         BindManager.addBind(entry.getKey(), entry.getValue());
                     }
-
                     if (Minecraft.getInstance().screen instanceof ClickGuiScreen) {
                         Minecraft.getInstance().setScreen(new ClickGuiScreen(null));
                     }

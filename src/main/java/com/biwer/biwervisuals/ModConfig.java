@@ -68,4 +68,8 @@ public class ModConfig {
     public boolean tagsAnimals = false;
     // Бинды: имя функции -> код клавиши (GLFW)
     public Map<String, Integer> binds = new HashMap<>();
+    // --- Fly ---
+    public boolean flyEnabled = false;
+    // --- Sprint ---
+    public boolean sprintEnabled = false;
 }

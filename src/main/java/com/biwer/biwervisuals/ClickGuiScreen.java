@@ -165,6 +165,16 @@ public class ClickGuiScreen extends Screen {
             drawToggle(graphics, x3 + 10, tagsY + 46, 15, 8, BiwerVisualsClient.CONFIG.tagsAnimals);
             graphics.text(this.font, "Животные", x3 + 30, tagsY + 46, 0xFFAAAAAA, false);
         }
+        // --- Fly (Movement) ---
+        int moveX = x2;
+        int flyY = startY + 30;
+        graphics.text(this.font, "Fly", moveX + 10, flyY + 5, textColor, false);
+        drawToggle(graphics, moveX + 90, flyY + 5, 20, 10, BiwerVisualsClient.CONFIG.flyEnabled);
+
+        // Блок Sprint
+        int sprintY = flyY + 30; // Сдвигаем ниже Fly
+        graphics.text(this.font, "Sprint", x2 + 10, sprintY + 5, textColor, false);
+        drawToggle(graphics, x2 + 90, sprintY + 5, 20, 10, BiwerVisualsClient.CONFIG.sprintEnabled);
 
         // --- PLAYER и MISC ---
         int x4 = x3 + colWidth + padding;
@@ -213,15 +223,19 @@ public class ClickGuiScreen extends Screen {
         int startX = (this.width - totalWidth) / 2;
         int startY = 20;
 
+        // --- Координаты для всех колонок ---
         int x1 = startX;
         int combatY = startY + 30;
 
-        int x3 = startX + (colWidth + padding) * 2;
+        int x2 = startX + colWidth + padding; // Movement
+        int flyY = startY + 30; // Fly
+        int sprintY = flyY + 30; // Sprint (сдвиг на 30 пикселей ниже Fly)
+
+        int x3 = startX + (colWidth + padding) * 2; // Render
         int ambY = startY + 30;
         int vmY = ambY + (BiwerVisualsClient.CONFIG.ambienceCollapsed ? 30 : 150);
         int espY = vmY + (BiwerVisualsClient.CONFIG.viewmodelCollapsed ? 30 : 170);
         int tagsY = espY + (BiwerVisualsClient.CONFIG.espCollapsed ? 30 : 80);
-
         if (button == 1) { // Сворачивание
             if (isHovered(mouseX, mouseY, x1 + 5, combatY, colWidth - 10, 15)) { BiwerVisualsClient.CONFIG.killAuraCollapsed = !BiwerVisualsClient.CONFIG.killAuraCollapsed; return true; }
             if (isHovered(mouseX, mouseY, x3 + 5, ambY, colWidth - 10, 15)) { BiwerVisualsClient.CONFIG.ambienceCollapsed = !BiwerVisualsClient.CONFIG.ambienceCollapsed; return true; }
@@ -295,6 +309,21 @@ public class ClickGuiScreen extends Screen {
                 if (isHovered(mouseX, mouseY, x3 + 10, tagsY + 33, 15, 8)) { BiwerVisualsClient.CONFIG.tagsMobs = !BiwerVisualsClient.CONFIG.tagsMobs; return true; }
                 if (isHovered(mouseX, mouseY, x3 + 10, tagsY + 46, 15, 8)) { BiwerVisualsClient.CONFIG.tagsAnimals = !BiwerVisualsClient.CONFIG.tagsAnimals; return true; }
             }
+
+            // Fly
+
+            if (isHovered(mouseX, mouseY, x2 + 90, flyY + 5, 20, 10)) {
+                BiwerVisualsClient.CONFIG.flyEnabled = !BiwerVisualsClient.CONFIG.flyEnabled;
+                return true;
+            }
+
+            // Sprint
+            if (isHovered(mouseX, mouseY, x2 + 90, sprintY + 5, 20, 10)) {
+                BiwerVisualsClient.CONFIG.sprintEnabled = !BiwerVisualsClient.CONFIG.sprintEnabled;
+                return true;
+            }
+
+
 
             // Закрытие
             if (mouseX >= this.width - 20 && mouseX <= this.width - 10 && mouseY >= 10 && mouseY <= 20) {

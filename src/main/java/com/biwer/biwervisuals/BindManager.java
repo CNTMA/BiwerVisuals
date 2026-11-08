@@ -1,9 +1,7 @@
 package com.biwer.biwervisuals;
 
-import com.mojang.blaze3d.platform.InputConstants;
-import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.minecraft.client.KeyMapping;
+import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 import org.lwjgl.glfw.GLFW;
 
@@ -11,78 +9,76 @@ import java.util.HashMap;
 import java.util.Map;
 
 public class BindManager {
-    private static final Map<String, KeyMapping> KEY_MAPPINGS = new HashMap<>();
+    private static final Map<String, Integer> BINDS = new HashMap<>();
+    private static final Map<String, Boolean> WAS_PRESSED = new HashMap<>();
 
     public static void init() {
-        // Регистрируем событие тика для проверки нажатий
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
-            for (Map.Entry<String, KeyMapping> entry : KEY_MAPPINGS.entrySet()) {
+            // Получаем handle окна (в 26.1.2 это может быть getWindow().getWindow() или getWindow().getHandle())
+            long window = GLFW.glfwGetCurrentContext(); // Если не работает, попробуйте getHandle()
+            if (window == 0) return;
+
+            for (Map.Entry<String, Integer> entry : BINDS.entrySet()) {
                 String functionName = entry.getKey();
-                KeyMapping keyMapping = entry.getValue();
-                while (keyMapping.consumeClick()) {
+                int keyCode = entry.getValue();
+
+                boolean isPressed = GLFW.glfwGetKey(window, keyCode) == GLFW.GLFW_PRESS;
+
+                if (isPressed && !WAS_PRESSED.getOrDefault(functionName, false)) {
                     toggleFunction(functionName, client);
                 }
+
+                WAS_PRESSED.put(functionName, isPressed);
             }
         });
     }
 
-    public static void addBind(String functionName, int keyCode) {
-        // Удаляем старый бинд, если есть
-        removeBind(functionName);
-
-        // Создаем KeyMapping для этой функции
-        KeyMapping.Category category = KeyMapping.Category.register(
-                net.minecraft.resources.Identifier.fromNamespaceAndPath("biwervisuals", "binds")
-        );
-
-        KeyMapping keyMapping = KeyMappingHelper.registerKeyMapping(new KeyMapping(
-                "key.biwervisuals.bind." + functionName.toLowerCase(),
-                InputConstants.Type.KEYSYM,
-                keyCode,
-                category
-        ));
-
-        KEY_MAPPINGS.put(functionName, keyMapping);
-        BiwerVisualsClient.CONFIG.binds.put(functionName, keyCode);
+    public static boolean addBind(String functionName, int keyCode) {
+        String lower = functionName.toLowerCase();
+        if (getAvailableFunctions().length > 0) {
+            for (String func : getAvailableFunctions()) {
+                if (func.equals(lower)) {
+                    BINDS.put(lower, keyCode);
+                    WAS_PRESSED.put(lower, false);
+                    BiwerVisualsClient.CONFIG.binds.put(lower, keyCode);
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     public static void removeBind(String functionName) {
-        if (KEY_MAPPINGS.containsKey(functionName)) {
-            // В Minecraft 26.1 нет простого способа удалить KeyMapping из реестра,
-            // поэтому мы просто убираем его из нашего списка и конфига.
-            KEY_MAPPINGS.remove(functionName);
-            BiwerVisualsClient.CONFIG.binds.remove(functionName);
-        }
-    }
-
-    private static void toggleFunction(String functionName, net.minecraft.client.Minecraft client) {
-        switch (functionName) {
-            case "KillAura" -> BiwerVisualsClient.CONFIG.killAuraEnabled = !BiwerVisualsClient.CONFIG.killAuraEnabled;
-            case "Ambience" -> BiwerVisualsClient.CONFIG.ambienceEnabled = !BiwerVisualsClient.CONFIG.ambienceEnabled;
-            case "Viewmodel" -> BiwerVisualsClient.CONFIG.viewmodelEnabled = !BiwerVisualsClient.CONFIG.viewmodelEnabled;
-            case "ESP" -> BiwerVisualsClient.CONFIG.espEnabled = !BiwerVisualsClient.CONFIG.espEnabled;
-            case "Tags" -> BiwerVisualsClient.CONFIG.tagsEnabled = !BiwerVisualsClient.CONFIG.tagsEnabled;
-            default -> {
-                // Если функции нет в списке, ничего не делаем
-                return;
-            }
-        }
-
-        // Выводим сообщение в чат (для обратной связи)
-        if (client.player != null) {
-            boolean isEnabled = switch (functionName) {
-                case "KillAura" -> BiwerVisualsClient.CONFIG.killAuraEnabled;
-                case "Ambience" -> BiwerVisualsClient.CONFIG.ambienceEnabled;
-                case "Viewmodel" -> BiwerVisualsClient.CONFIG.viewmodelEnabled;
-                case "ESP" -> BiwerVisualsClient.CONFIG.espEnabled;
-                case "Tags" -> BiwerVisualsClient.CONFIG.tagsEnabled;
-                default -> false;
-            };
-            client.player.sendSystemMessage(Component.literal("§e[Bind] " + functionName + ": " + (isEnabled ? "§aВКЛ" : "§cВЫКЛ")));
-        }
+        String lower = functionName.toLowerCase();
+        BINDS.remove(lower);
+        WAS_PRESSED.remove(lower);
+        BiwerVisualsClient.CONFIG.binds.remove(lower);
     }
 
     public static void clearAll() {
-        KEY_MAPPINGS.clear();
+        BINDS.clear();
+        WAS_PRESSED.clear();
+    }
+
+    public static String[] getAvailableFunctions() {
+        return new String[]{"killaura", "ambience", "viewmodel", "entityesp", "tags", "fly", "sprint"};
+    }
+
+    private static void toggleFunction(String functionName, Minecraft client) {
+        boolean isEnabled = false;
+        switch (functionName) {
+            case "killaura" -> { BiwerVisualsClient.CONFIG.killAuraEnabled = !BiwerVisualsClient.CONFIG.killAuraEnabled; isEnabled = BiwerVisualsClient.CONFIG.killAuraEnabled; }
+            case "ambience" -> { BiwerVisualsClient.CONFIG.ambienceEnabled = !BiwerVisualsClient.CONFIG.ambienceEnabled; isEnabled = BiwerVisualsClient.CONFIG.ambienceEnabled; }
+            case "viewmodel" -> { BiwerVisualsClient.CONFIG.viewmodelEnabled = !BiwerVisualsClient.CONFIG.viewmodelEnabled; isEnabled = BiwerVisualsClient.CONFIG.viewmodelEnabled; }
+            case "entityesp" -> { BiwerVisualsClient.CONFIG.espEnabled = !BiwerVisualsClient.CONFIG.espEnabled; isEnabled = BiwerVisualsClient.CONFIG.espEnabled; }
+            case "tags" -> { BiwerVisualsClient.CONFIG.tagsEnabled = !BiwerVisualsClient.CONFIG.tagsEnabled; isEnabled = BiwerVisualsClient.CONFIG.tagsEnabled; }
+            case "fly" -> { Fly.toggle(client); return; } // Fly сам выведет сообщение
+            case "sprint" -> { Sprint.toggle(client); return; }
+            default -> { return; }
+        }
+
+        if (client.player != null) {
+            client.player.sendSystemMessage(Component.literal("§e[Bind] " + functionName + ": " + (isEnabled ? "§aВКЛ" : "§cВЫКЛ")));
+        }
     }
 }

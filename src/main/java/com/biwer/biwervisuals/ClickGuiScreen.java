@@ -245,30 +245,24 @@ public class ClickGuiScreen extends Screen {
         drawToggle(graphics, x3 + 90, vmY + 5, 20, 10, BiwerVisualsClient.CONFIG.viewmodelEnabled);
 
         if (!BiwerVisualsClient.CONFIG.viewmodelCollapsed) {
-            graphics.fill(x3 + 5, vmY + 15, x3 + colWidth - 5, vmY + 160, 0xAA000000);
+            graphics.fill(x3 + 5, vmY + 15, x3 + colWidth - 5, vmY + 122, 0xAA000000);
             if (BiwerVisualsClient.CONFIG.viewmodelEnabled) {
-                drawToggle(graphics, x3 + 10, vmY + 20, 15, 8, BiwerVisualsClient.CONFIG.vmPos);
-                graphics.text(this.font, "Позиция", x3 + 30, vmY + 20, 0xFFAAAAAA, false);
-                drawSlider(graphics, x3 + 10, vmY + 32, 100, 4, BiwerVisualsClient.CONFIG.vmPosX, -2, 2, "X");
-                drawSlider(graphics, x3 + 10, vmY + 42, 100, 4, BiwerVisualsClient.CONFIG.vmPosY, -2, 2, "Y");
-                drawSlider(graphics, x3 + 10, vmY + 52, 100, 4, BiwerVisualsClient.CONFIG.vmPosZ, -2, 2, "Z");
+                graphics.text(this.font, "Основная рука", x3 + 10, vmY + 20, 0xFFAAAAAA, false);
+                drawSlider(graphics, x3 + 10, vmY + 32, 100, 4, BiwerVisualsClient.CONFIG.vmMainX, -2, 2, "");
+                drawSlider(graphics, x3 + 10, vmY + 42, 100, 4, BiwerVisualsClient.CONFIG.vmMainY, -2, 2, "");
+                drawSlider(graphics, x3 + 10, vmY + 52, 100, 4, BiwerVisualsClient.CONFIG.vmMainZ, -2, 2, "");
 
-                drawToggle(graphics, x3 + 10, vmY + 65, 15, 8, BiwerVisualsClient.CONFIG.vmRot);
-                graphics.text(this.font, "Поворот", x3 + 30, vmY + 65, 0xFFAAAAAA, false);
-                drawSlider(graphics, x3 + 10, vmY + 77, 100, 4, BiwerVisualsClient.CONFIG.vmRotX, -180, 180, "X");
-                drawSlider(graphics, x3 + 10, vmY + 87, 100, 4, BiwerVisualsClient.CONFIG.vmRotY, -180, 180, "Y");
-                drawSlider(graphics, x3 + 10, vmY + 97, 100, 4, BiwerVisualsClient.CONFIG.vmRotZ, -180, 180, "Z");
+                graphics.text(this.font, "Вторая рука", x3 + 10, vmY + 65, 0xFFAAAAAA, false);
+                drawSlider(graphics, x3 + 10, vmY + 77, 100, 4, BiwerVisualsClient.CONFIG.vmOffX, -2, 2, "");
+                drawSlider(graphics, x3 + 10, vmY + 87, 100, 4, BiwerVisualsClient.CONFIG.vmOffY, -2, 2, "");
+                drawSlider(graphics, x3 + 10, vmY + 97, 100, 4, BiwerVisualsClient.CONFIG.vmOffZ, -2, 2, "");
 
-                drawToggle(graphics, x3 + 10, vmY + 110, 15, 8, BiwerVisualsClient.CONFIG.vmScale);
-                graphics.text(this.font, "Размер", x3 + 30, vmY + 110, 0xFFAAAAAA, false);
-                drawSlider(graphics, x3 + 10, vmY + 122, 100, 4, BiwerVisualsClient.CONFIG.vmScaleX, 0, 3, "X");
-                drawSlider(graphics, x3 + 10, vmY + 132, 100, 4, BiwerVisualsClient.CONFIG.vmScaleY, 0, 3, "Y");
-                drawSlider(graphics, x3 + 10, vmY + 142, 100, 4, BiwerVisualsClient.CONFIG.vmScaleZ, 0, 3, "Z");
+                drawButton(graphics, "Сбросить", x3 + 10, vmY + 108, 100, 12, mouseX, mouseY, false, true);
             }
         }
 
         // Entity ESP
-        int espY = vmY + (BiwerVisualsClient.CONFIG.viewmodelCollapsed ? 30 : 170);
+        int espY = vmY + (BiwerVisualsClient.CONFIG.viewmodelCollapsed ? 30 : 135);
         graphics.text(this.font, "Entity ESP", x3 + 10, espY + 5, textColor, false);
         drawToggle(graphics, x3 + 90, espY + 5, 20, 10, BiwerVisualsClient.CONFIG.espEnabled);
 
@@ -593,7 +587,7 @@ public class ClickGuiScreen extends Screen {
         int x3 = startX + (colWidth + padding) * 2; // Render
         int ambY = startY + 30;
         int vmY = ambY + (BiwerVisualsClient.CONFIG.ambienceCollapsed ? 30 : 150);
-        int espY = vmY + (BiwerVisualsClient.CONFIG.viewmodelCollapsed ? 30 : 170);
+        int espY = vmY + (BiwerVisualsClient.CONFIG.viewmodelCollapsed ? 30 : 135);
         int tagsY = espY + (BiwerVisualsClient.CONFIG.espCollapsed ? 30 : 80);
         int x4 = startX + (colWidth + padding) * 3; // Player
         int autoTotemY = startY + 30;
@@ -728,18 +722,21 @@ public class ClickGuiScreen extends Screen {
             // Viewmodel
             if (isHovered(mouseX, mouseY, x3 + 90, vmY + 5, 20, 10)) { BiwerVisualsClient.CONFIG.viewmodelEnabled = !BiwerVisualsClient.CONFIG.viewmodelEnabled; return true; }
             if (!BiwerVisualsClient.CONFIG.viewmodelCollapsed && BiwerVisualsClient.CONFIG.viewmodelEnabled) {
-                if (isHovered(mouseX, mouseY, x3 + 10, vmY + 20, 15, 8)) { BiwerVisualsClient.CONFIG.vmPos = !BiwerVisualsClient.CONFIG.vmPos; return true; }
-                if (isHovered(mouseX, mouseY, x3 + 10, vmY + 65, 15, 8)) { BiwerVisualsClient.CONFIG.vmRot = !BiwerVisualsClient.CONFIG.vmRot; return true; }
-                if (isHovered(mouseX, mouseY, x3 + 10, vmY + 110, 15, 8)) { BiwerVisualsClient.CONFIG.vmScale = !BiwerVisualsClient.CONFIG.vmScale; return true; }
-                if (isHovered(mouseX, mouseY, x3 + 10, vmY + 32, 100, 4)) { BiwerVisualsClient.CONFIG.vmPosX = (float) ((mouseX - (x3 + 10)) / 100.0 * 4 - 2); return true; }
-                if (isHovered(mouseX, mouseY, x3 + 10, vmY + 42, 100, 4)) { BiwerVisualsClient.CONFIG.vmPosY = (float) ((mouseX - (x3 + 10)) / 100.0 * 4 - 2); return true; }
-                if (isHovered(mouseX, mouseY, x3 + 10, vmY + 52, 100, 4)) { BiwerVisualsClient.CONFIG.vmPosZ = (float) ((mouseX - (x3 + 10)) / 100.0 * 4 - 2); return true; }
-                if (isHovered(mouseX, mouseY, x3 + 10, vmY + 77, 100, 4)) { BiwerVisualsClient.CONFIG.vmRotX = (float) ((mouseX - (x3 + 10)) / 100.0 * 360 - 180); return true; }
-                if (isHovered(mouseX, mouseY, x3 + 10, vmY + 87, 100, 4)) { BiwerVisualsClient.CONFIG.vmRotY = (float) ((mouseX - (x3 + 10)) / 100.0 * 360 - 180); return true; }
-                if (isHovered(mouseX, mouseY, x3 + 10, vmY + 97, 100, 4)) { BiwerVisualsClient.CONFIG.vmRotZ = (float) ((mouseX - (x3 + 10)) / 100.0 * 360 - 180); return true; }
-                if (isHovered(mouseX, mouseY, x3 + 10, vmY + 122, 100, 4)) { BiwerVisualsClient.CONFIG.vmScaleX = (float) ((mouseX - (x3 + 10)) / 100.0 * 3); return true; }
-                if (isHovered(mouseX, mouseY, x3 + 10, vmY + 132, 100, 4)) { BiwerVisualsClient.CONFIG.vmScaleY = (float) ((mouseX - (x3 + 10)) / 100.0 * 3); return true; }
-                if (isHovered(mouseX, mouseY, x3 + 10, vmY + 142, 100, 4)) { BiwerVisualsClient.CONFIG.vmScaleZ = (float) ((mouseX - (x3 + 10)) / 100.0 * 3); return true; }
+                if (isHovered(mouseX, mouseY, x3 + 10, vmY + 32, 100, 4)) { BiwerVisualsClient.CONFIG.vmMainX = (float) ((mouseX - (x3 + 10)) / 100.0 * 4 - 2); return true; }
+                if (isHovered(mouseX, mouseY, x3 + 10, vmY + 42, 100, 4)) { BiwerVisualsClient.CONFIG.vmMainY = (float) ((mouseX - (x3 + 10)) / 100.0 * 4 - 2); return true; }
+                if (isHovered(mouseX, mouseY, x3 + 10, vmY + 52, 100, 4)) { BiwerVisualsClient.CONFIG.vmMainZ = (float) ((mouseX - (x3 + 10)) / 100.0 * 4 - 2); return true; }
+                if (isHovered(mouseX, mouseY, x3 + 10, vmY + 77, 100, 4)) { BiwerVisualsClient.CONFIG.vmOffX = (float) ((mouseX - (x3 + 10)) / 100.0 * 4 - 2); return true; }
+                if (isHovered(mouseX, mouseY, x3 + 10, vmY + 87, 100, 4)) { BiwerVisualsClient.CONFIG.vmOffY = (float) ((mouseX - (x3 + 10)) / 100.0 * 4 - 2); return true; }
+                if (isHovered(mouseX, mouseY, x3 + 10, vmY + 97, 100, 4)) { BiwerVisualsClient.CONFIG.vmOffZ = (float) ((mouseX - (x3 + 10)) / 100.0 * 4 - 2); return true; }
+                if (isHovered(mouseX, mouseY, x3 + 10, vmY + 108, 100, 12)) {
+                    BiwerVisualsClient.CONFIG.vmMainX = 0.0f;
+                    BiwerVisualsClient.CONFIG.vmMainY = 0.0f;
+                    BiwerVisualsClient.CONFIG.vmMainZ = 0.0f;
+                    BiwerVisualsClient.CONFIG.vmOffX = 0.0f;
+                    BiwerVisualsClient.CONFIG.vmOffY = 0.0f;
+                    BiwerVisualsClient.CONFIG.vmOffZ = 0.0f;
+                    return true;
+                }
             }
 
             // Entity ESP

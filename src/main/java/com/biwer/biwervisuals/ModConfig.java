@@ -23,6 +23,14 @@ public class ModConfig {
     public float vmScaleX = 1.0f;
     public float vmScaleY = 1.0f;
     public float vmScaleZ = 1.0f;
+
+    // --- Viewmodel (порт aethereal View Model) ---
+    public float vmMainX = 0.0f;
+    public float vmMainY = 0.0f;
+    public float vmMainZ = 0.0f;
+    public float vmOffX = 0.0f;
+    public float vmOffY = 0.0f;
+    public float vmOffZ = 0.0f;
     // Состояние свернутости блоков (false = развернут)
     public boolean ambienceCollapsed = false;
     public boolean viewmodelCollapsed = true; // По умолчанию Viewmodel свернут, чтобы не загромождать
@@ -194,7 +202,7 @@ public class ModConfig {
     // --- SwingAnimation ---
     public boolean swingAnimationEnabled = false;
     public boolean swingAnimationCollapsed = true;
-    public boolean swingAnimationAuraOnly = false;
+    public boolean swingAnimationAuraOnly = true;
     public int swingAnimationMode = 0;       // 0..4 (Мод 1..5)
     public float swingAngle = 75.0f;
     public float swingTipTilt = -20.0f;

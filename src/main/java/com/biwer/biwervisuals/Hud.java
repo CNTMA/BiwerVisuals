@@ -56,12 +56,9 @@ public class Hud implements HudElement {
 
     public enum Element {
         WATERMARK("WaterMark", 6, 6),
-        BINDS("Binds", 6, 22),
-        POTIONS("Potions", 6, 96),
-        ARRAY_LIST("Array List", -6, 6),
-        COORDINATES("Cordinates", 6, 220),
-        RADAR("Radar", 6, 262),
-        TARGET_HUD("TargetHUD", 190, 6),
+        HOTKEYS("Hot-keys", 6, 22),
+        POTION("Potion", 6, 96),
+        TARGET("Target", 190, 6),
         ARMOR("Armor", 190, 60),
         ITEMS("Items", 190, 100),
         ENVIRONMENT("Environment", 190, 140),
@@ -179,9 +176,6 @@ public class Hud implements HudElement {
         float[] p = BiwerVisualsClient.CONFIG.hudPositions.get(e.key());
         if (p == null || p.length < 2) {
             float defX = e.defX;
-            if (e == Element.ARRAY_LIST && defX < 0) {
-                defX = mc.getWindow().getGuiScaledWidth() + defX;
-            }
             p = new float[]{defX, e.defY};
             BiwerVisualsClient.CONFIG.hudPositions.put(e.key(), p);
         }
@@ -242,12 +236,9 @@ public class Hud implements HudElement {
 
         int[] size = switch (e) {
             case WATERMARK -> watermark(g, mc, x, y);
-            case BINDS -> binds(g, mc, x, y, editor);
-            case POTIONS -> potions(g, mc, x, y, editor);
-            case ARRAY_LIST -> arrayList(g, mc, x, y, editor);
-            case COORDINATES -> coordinates(g, mc, x, y);
-            case RADAR -> radar(g, mc, x, y);
-            case TARGET_HUD -> targetHud(g, mc, x, y, editor);
+            case HOTKEYS -> binds(g, mc, x, y, editor);
+            case POTION -> potions(g, mc, x, y, editor);
+            case TARGET -> targetHud(g, mc, x, y, editor);
             case ARMOR -> armor(g, mc, x, y);
             case ITEMS -> items(g, mc, x, y);
             case ENVIRONMENT -> environment(g, mc, x, y);
@@ -263,6 +254,15 @@ public class Hud implements HudElement {
             g.fill(x - 2, y - 1, x - 1, y + size[1] + 1, color);
             g.fill(x + size[0] + 1, y - 1, x + size[0] + 2, y + size[1] + 1, color);
         }
+    }
+
+    /** Рамка виджета в стиле aethereal: фон, розовый акцент, иконка, заголовок, разделитель. */
+    private static void widgetFrame(GuiGraphicsExtractor g, Minecraft mc, int x, int y, int width, int height, String icon, String title) {
+        g.fill(x, y, x + width, y + height, 0xB0101018);
+        g.fill(x, y, x + width, y + 1, 0xFFFF69B4);
+        g.text(mc.font, icon, x + 4, y + 3, 0xFFFF69B4, false);
+        g.text(mc.font, title, x + 16, y + 3, 0xFFFFFFFF, false);
+        g.fill(x + 2, y + 14, x + width - 2, y + 15, 0x40FFFFFF);
     }
 
     /** Броня (порт ArmorWidget): слоты FEET..HEAD с иконками и прочностью. */
@@ -282,16 +282,16 @@ public class Hud implements HudElement {
         }
         if (count == 0) return new int[]{0, 0};
 
-        int width = 4 + count * 18;
-        int height = 22;
-        g.fill(x, y, x + width, y + height, 0x90000000);
+        int width = Math.max(70, 4 + count * 18);
+        int height = 36;
+        widgetFrame(g, mc, x, y, width, height, "A", "Armor");
 
         int index = 0;
         for (net.minecraft.world.entity.EquipmentSlot slot : slots) {
             net.minecraft.world.item.ItemStack stack = mc.player.getItemBySlot(slot);
             if (stack.isEmpty()) continue;
             int ix = x + 3 + index * 18;
-            int iy = y + 3;
+            int iy = y + 17;
             g.item(stack, ix, iy);
             g.itemDecorations(mc.font, stack, ix, iy);
             index++;
@@ -304,13 +304,13 @@ public class Hud implements HudElement {
         if (mc.player == null) return new int[]{0, 0};
 
         int width = 4 + 9 * 18;
-        int height = 22;
-        g.fill(x, y, x + width, y + height, 0x90000000);
+        int height = 36;
+        widgetFrame(g, mc, x, y, width, height, "I", "Items");
 
         for (int i = 0; i < 9; i++) {
             net.minecraft.world.item.ItemStack stack = mc.player.getInventory().getItem(i);
             int ix = x + 3 + i * 18;
-            int iy = y + 3;
+            int iy = y + 17;
             g.item(stack, ix, iy);
             if (!stack.isEmpty()) {
                 g.itemDecorations(mc.font, stack, ix, iy);
@@ -336,15 +336,14 @@ public class Hud implements HudElement {
                 "FPS: " + mc.getFps()
         };
 
-        int width = 0;
+        int width = 70;
         for (String line : lines) {
-            width = Math.max(width, mc.font.width(line));
+            width = Math.max(width, mc.font.width(line) + 8);
         }
-        width += 8;
-        int height = lines.length * 10 + 4;
+        int height = lines.length * 10 + 18;
 
-        g.fill(x - 2, y - 2, x + width + 2, y + height + 2, 0x90000000);
-        int lineY = y;
+        widgetFrame(g, mc, x, y, width, height, "E", "Environment");
+        int lineY = y + 17;
         for (String line : lines) {
             g.text(mc.font, line, x + 2, lineY, 0xFFFFFFFF, false);
             lineY += 10;
@@ -371,17 +370,16 @@ public class Hud implements HudElement {
         }
         if (active.isEmpty()) return new int[]{0, 0};
 
-        int width = 0;
+        int width = 70;
         for (net.minecraft.world.item.ItemStack stack : active) {
             int percent = Math.round(mc.player.getCooldowns().getCooldownPercent(stack, 0.0f) * 100.0f);
             String label = stack.getHoverName().getString() + " " + percent + "%";
-            width = Math.max(width, 22 + mc.font.width(label));
+            width = Math.max(width, 24 + mc.font.width(label));
         }
-        width += 5;
-        int height = 4 + active.size() * 12;
+        int height = 18 + active.size() * 12;
 
-        g.fill(x - 2, y - 2, x + width + 2, y + height + 2, 0x90000000);
-        int rowY = y;
+        widgetFrame(g, mc, x, y, width, height, "C", "Cooldowns");
+        int rowY = y + 17;
         for (net.minecraft.world.item.ItemStack stack : active) {
             int percent = Math.round(mc.player.getCooldowns().getCooldownPercent(stack, 0.0f) * 100.0f);
             g.item(stack, x + 2, rowY - 1);
@@ -415,17 +413,20 @@ public class Hud implements HudElement {
 
         if (lines.isEmpty()) {
             if (!editor) return new int[]{0, 0};
-            g.text(font, "Binds (пусто)", x, y, 0xFF777777, true);
-            return new int[]{font.width("Binds (пусто)"), font.lineHeight};
+            g.text(font, "Hot-keys (пусто)", x, y, 0xFF777777, true);
+            return new int[]{font.width("Hot-keys (пусто)"), font.lineHeight};
         }
 
         int width = 0;
         for (String line : lines) width = Math.max(width, font.width(line));
+        width = Math.max(width, font.width("Hot-keys"));
+
+        widgetFrame(g, mc, x - 4, y, width + 10, 16 + lines.size() * LINE, "Q", "Hot-keys");
 
         for (int i = 0; i < lines.size(); i++) {
-            g.text(font, lines.get(i), x, y + i * LINE, colors.get(i), true);
+            g.text(font, lines.get(i), x, y + 17 + i * LINE, colors.get(i), true);
         }
-        return new int[]{width, lines.size() * LINE};
+        return new int[]{width + 6, 16 + lines.size() * LINE};
     }
 
     private static int[] potions(GuiGraphicsExtractor g, Minecraft mc, int x, int y, boolean editor) {
@@ -435,8 +436,8 @@ public class Hud implements HudElement {
 
         if (effects.isEmpty()) {
             if (!editor) return new int[]{0, 0};
-            g.text(font, "Potions (нет)", x, y, 0xFF777777, true);
-            return new int[]{font.width("Potions (нет)"), font.lineHeight};
+            g.text(font, "Potion (нет)", x, y, 0xFF777777, true);
+            return new int[]{font.width("Potion (нет)"), font.lineHeight};
         }
 
         List<String> lines = new ArrayList<>();
@@ -449,11 +450,14 @@ public class Hud implements HudElement {
 
         int width = 0;
         for (String line : lines) width = Math.max(width, font.width(line));
+        width = Math.max(width, font.width("Potion"));
+
+        widgetFrame(g, mc, x - 4, y, width + 10, 16 + lines.size() * LINE, "P", "Potion");
 
         for (int i = 0; i < lines.size(); i++) {
-            g.text(font, lines.get(i), x, y + i * LINE, 0xFFB388FF, true);
+            g.text(font, lines.get(i), x, y + 17 + i * LINE, 0xFFB388FF, true);
         }
-        return new int[]{width, lines.size() * LINE};
+        return new int[]{width + 6, 16 + lines.size() * LINE};
     }
 
     private static int[] arrayList(GuiGraphicsExtractor g, Minecraft mc, int x, int y, boolean editor) {
@@ -548,16 +552,16 @@ public class Hud implements HudElement {
         float maxHealth = Math.max(1.0f, target.getMaxHealth());
         float ratio = Math.max(0.0f, Math.min(1.0f, health / maxHealth));
 
-        g.fill(x, y, x + width, y + 22, 0xA0101018);
-        g.text(font, name, x + 3, y + 3, 0xFFFFFFFF, true);
+        widgetFrame(g, mc, x, y, width, 38, "T", "Target");
+        g.text(font, name, x + 4, y + 17, 0xFFFFFFFF, true);
 
-        int barTop = y + 14;
+        int barTop = y + 28;
         g.fill(x + 3, barTop, x + width - 3, barTop + 5, 0xFF331111);
         int filled = (int) ((width - 6) * ratio);
         int barColor = ratio > 0.5f ? 0xFF55FF55 : (ratio > 0.25f ? 0xFFFFD24A : 0xFFFF5555);
         g.fill(x + 3, barTop, x + 3 + filled, barTop + 5, barColor);
 
-        return new int[]{width, 22};
+        return new int[]{width, 38};
     }
 
     // ================= Вспомогательное =================

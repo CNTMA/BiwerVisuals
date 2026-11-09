@@ -20,10 +20,19 @@ public class SwingAnimation {
         // Вызов из HeldItemRendererMixin.
     }
 
-    public static void apply(PoseStack matrices, AbstractClientPlayer player, InteractionHand hand, float swingProgress) {
+    /** Нужно ли гасить ванильный взмах (аналог event.a(true)). */
+    public static boolean cancelVanilla() {
+        if (!BiwerVisualsClient.CONFIG.swingAnimationEnabled) return false;
+        return !BiwerVisualsClient.CONFIG.swingAnimationAuraOnly || Aura.getTarget() != null;
+    }
+
+    public static void apply(PoseStack matrices, AbstractClientPlayer player, InteractionHand hand, float tickDelta) {
         if (!BiwerVisualsClient.CONFIG.swingAnimationEnabled) return;
         if (hand != InteractionHand.MAIN_HAND) return;
         if (BiwerVisualsClient.CONFIG.swingAnimationAuraOnly && Aura.getTarget() == null) return;
+
+        // Ванильный swingProgress может быть обнулён миксином — берём исходный прогресс.
+        float swingProgress = Math.max(0.0f, Math.min(1.0f, player.getAttackAnim(tickDelta)));
 
         HumanoidArm arm = player.getMainArm();
         int side = arm == HumanoidArm.RIGHT ? 1 : -1;

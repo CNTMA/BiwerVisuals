@@ -1,6 +1,7 @@
 package com.biwer.biwervisuals.mixin;
 
 import com.biwer.biwervisuals.BiwerVisualsClient;
+import com.biwer.biwervisuals.SwingAnimation;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
 import net.minecraft.client.player.AbstractClientPlayer;
@@ -45,5 +46,7 @@ public class HeldItemRendererMixin {
                 );
             }
         }
+
+        SwingAnimation.apply(matrices, player, hand, swingProgress);
     }
 }

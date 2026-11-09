@@ -8,6 +8,9 @@
 		"ClientClockManagerMixin",
 		"LevelMixin",
 		"HeldItemRendererMixin",
+		"VelocityMixin",
+		"CrosshairMixin",
+		"SeeInvisiblesMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1

@@ -57,58 +57,48 @@ public class BiwerVisualsClient implements ClientModInitializer {
 
         Sprint.init();
 
+        Speed.init();
+
+        BunnyHop.init();
+
+        TargetStrafe.init();
+
+        KillAura.init();
+
+        Aura.init();
+
+        TriggerBot.init();
+
+        AimAssistant.init();
+
+        Velocity.init();
+
+        FullBright.init();
+
+        Crosshair.init();
+
+        SwingAnimation.init();
+
+        SeeInvisibles.init();
+
+        Hud.init();
+
+        JumpCircles.init();
+
+        CustomSky.init();
+
+        AutoTotem.init();
+
         // 4. Загрузка биндов из конфига при старте
         for (Map.Entry<String, Integer> entry : CONFIG.binds.entrySet()) {
             BindManager.addBind(entry.getKey(), entry.getValue());
         }
 
-        // 5. Тик (открытие меню и KillAura)
+        // 5. Тик (открытие меню)
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             while (openGuiKey.consumeClick()) {
                 if (client.screen == null) {
                     client.setScreen(new ClickGuiScreen(null));
-                }
-            }
-
-            // --- KILLAURA ---
-            if (client.player == null || client.level == null) return;
-
-            if (CONFIG.killAuraEnabled) {
-                if (CONFIG.dontHitItemUse && client.player.isUsingItem()) return;
-                if (CONFIG.dontHitContainer && client.screen != null) return;
-
-                LivingEntity target = findTarget(client);
-                if (target != null) {
-                    double dx = target.getX() - client.player.getX();
-                    double dy = (target.getY() + target.getEyeHeight()) - (client.player.getY() + client.player.getEyeHeight());
-                    double dz = target.getZ() - client.player.getZ();
-                    double dist = Math.sqrt(dx * dx + dz * dz);
-
-                    float targetYaw = (float) (Math.atan2(dz, dx) * 180.0 / Math.PI) - 90.0f;
-                    float targetPitch = (float) -(Math.atan2(dy, dist) * 180.0 / Math.PI);
-
-                    if (CONFIG.aimMode != 0) {
-                        float speed = (CONFIG.aimMode == 2) ? 0.8f : 0.25f;
-                        float currentYaw = client.player.getYRot();
-                        float currentPitch = client.player.getXRot();
-
-                        float deltaYaw = targetYaw - currentYaw;
-                        while (deltaYaw > 180) deltaYaw -= 360;
-                        while (deltaYaw < -180) deltaYaw += 360;
-                        float deltaPitch = targetPitch - currentPitch;
-
-                        client.player.setYRot(currentYaw + deltaYaw * speed);
-                        client.player.setXRot(currentPitch + deltaPitch * speed);
-                    }
-
-                    if (CONFIG.onlyCriticals && client.player.onGround()) {
-                        // Ждем прыжка для крита
-                    } else {
-                        if (client.player.getAttackStrengthScale(0.5f) >= 1.0f) {
-                            client.gameMode.attack(client.player, target);
-                            client.player.swing(InteractionHand.MAIN_HAND);
-                        }
-                    }
                 }
             }
         });
@@ -117,6 +107,12 @@ public class BiwerVisualsClient implements ClientModInitializer {
         ClientSendMessageEvents.ALLOW_CHAT.register((message) -> {
             if (message.startsWith(".")) {
                 clearChatInput();
+
+                // HUD
+                if (message.equalsIgnoreCase(".hud") || message.toLowerCase().startsWith(".hud ")) {
+                    Hud.handleCommand(message);
+                    return false;
+                }
 
                 // Конфиги
                 if (message.startsWith(".cfg save ")) {
@@ -237,13 +233,12 @@ public class BiwerVisualsClient implements ClientModInitializer {
     }
 
     // Поиск цели для KillAura
-    private static LivingEntity findTarget(Minecraft client) {
+    public static LivingEntity findTarget(Minecraft client, double range) {
         Player player = client.player;
         if (player == null || client.level == null) return null;
 
         LivingEntity best = null;
         double bestDist = Double.MAX_VALUE;
-        double range = CONFIG.killAuraRange + CONFIG.killAuraExtraRange;
 
         for (var entity : client.level.getEntities(player, player.getBoundingBox().inflate(range))) {
             if (entity instanceof LivingEntity living && entity != player && living.isAlive()) {

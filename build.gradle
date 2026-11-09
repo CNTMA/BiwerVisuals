@@ -1,7 +1,18 @@
+buildscript {
+	repositories {
+		mavenCentral()
+		gradlePluginPortal()
+	}
+	dependencies {
+		classpath 'com.guardsquare:proguard-gradle:7.4.2'
+		classpath 'com.gradleup.shadow:shadow-gradle-plugin:8.3.4'
+	}
+}
+
 plugins {
-	// Для 26.2 используется плагин БЕЗ -remap
 	id 'net.fabricmc.fabric-loom' version "${loom_version}"
 	id 'maven-publish'
+	id 'com.gradleup.shadow' version '9.2.0'
 }
 
 repositories {
@@ -18,6 +29,7 @@ dependencies {
 processResources {
 	def version = project.version
 	inputs.property "version", version
+
 	filesMatching("fabric.mod.json") {
 		expand "version": version
 	}
@@ -31,4 +43,37 @@ java {
 	withSourcesJar()
 	sourceCompatibility = JavaVersion.VERSION_21
 	targetCompatibility = JavaVersion.VERSION_21
+}
+
+jar {
+	def projectName = project.name
+	inputs.property "projectName", projectName
+
+	from("LICENSE") {
+		rename { "${it}_$projectName"}
+	}
+}
+
+publishing {
+	publications {
+		create("mavenJava", MavenPublication) {
+			from components.java
+		}
+	}
+	repositories {
+	}
+}
+
+tasks.withType(AbstractCopyTask).configureEach {
+	duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+// ================= НАСТРОЙКА ОБФУСКАЦИИ (PROGUARD) =================
+
+// Настройка ShadowJar (собирает все зависимости в один JAR)
+
+// ================= СБОРКА =================
+// Fabric API в тени даёт больше 65535 записей, без zip64 shadowJar падает
+tasks.named("shadowJar") {
+    zip64 = true
 }

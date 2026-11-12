@@ -3,7 +3,6 @@ package com.biwer.biwervisuals;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.player.AbstractClientPlayer;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.HumanoidArm;
@@ -11,30 +10,23 @@ import net.minecraft.world.entity.HumanoidArm;
 /**
  * SwingAnimation — настраиваемая анимация взмаха руки (порт aethereal).
  *
- * Применяется в HeldItemRendererMixin в начале renderArmWithItem, до ванильных
- * трансформаций предмета. Пять режимов, угол поворота, наклон кончика и сила
- * взмаха настраиваются в GUI.
+ * В 26.1.2 ванильная анимация применяется в applyItemArmAttackTransform.
+ * Миксин перехватывает его и вызывает applyVanillaOverride. Если метод
+ * вернул true — ванильная анимация отменяется, и рука двигается только
+ * по нашим трансформациям (Мод 1..5).
  */
 public class SwingAnimation {
     public static void init() {
         // Вызов из HeldItemRendererMixin.
     }
 
-    /** Нужно ли гасить ванильный взмах (аналог event.a(true)). */
-    public static boolean cancelVanilla() {
+    /**
+     * @return true, если ванильный applyItemArmAttackTransform нужно отменить.
+     */
+    public static boolean applyVanillaOverride(PoseStack matrices, HumanoidArm arm, float swingProgress) {
         if (!BiwerVisualsClient.CONFIG.swingAnimationEnabled) return false;
-        return !BiwerVisualsClient.CONFIG.swingAnimationAuraOnly || Aura.getTarget() != null;
-    }
+        if (BiwerVisualsClient.CONFIG.swingAnimationAuraOnly && Aura.getTarget() == null) return false;
 
-    public static void apply(PoseStack matrices, AbstractClientPlayer player, InteractionHand hand, float tickDelta) {
-        if (!BiwerVisualsClient.CONFIG.swingAnimationEnabled) return;
-        if (hand != InteractionHand.MAIN_HAND) return;
-        if (BiwerVisualsClient.CONFIG.swingAnimationAuraOnly && Aura.getTarget() == null) return;
-
-        // Ванильный swingProgress может быть обнулён миксином — берём исходный прогресс.
-        float swingProgress = Math.max(0.0f, Math.min(1.0f, player.getAttackAnim(tickDelta)));
-
-        HumanoidArm arm = player.getMainArm();
         int side = arm == HumanoidArm.RIGHT ? 1 : -1;
         int mode = Math.max(0, Math.min(4, BiwerVisualsClient.CONFIG.swingAnimationMode));
         float anim = (float) Math.sin(swingProgress * Math.PI);
@@ -46,29 +38,29 @@ public class SwingAnimation {
         }
 
         switch (mode) {
-            case 0 -> {
+            case 0 -> { // Мод 1
                 matrices.mulPose(Axis.YP.rotationDegrees(side * 90));
                 matrices.mulPose(Axis.ZP.rotationDegrees(side * -70));
                 matrices.mulPose(Axis.XP.rotationDegrees(-BiwerVisualsClient.CONFIG.swingAngle - power * anim));
             }
-            case 1 -> {
+            case 1 -> { // Мод 2
                 matrices.mulPose(Axis.YP.rotationDegrees(side * 90));
                 matrices.mulPose(Axis.ZP.rotationDegrees(side * -65));
                 matrices.mulPose(Axis.XP.rotationDegrees(-65.0f + power * anim));
             }
-            case 2 -> {
+            case 2 -> { // Мод 3
                 matrices.mulPose(Axis.YP.rotationDegrees(side * -90));
                 matrices.mulPose(Axis.ZP.rotationDegrees(side * 60));
                 matrices.mulPose(Axis.XP.rotationDegrees(30.0f));
                 matrices.mulPose(Axis.ZP.rotationDegrees(side * power * anim));
             }
-            case 3 -> {
+            case 3 -> { // Мод 4
                 matrices.mulPose(Axis.YP.rotationDegrees(side * 90));
                 matrices.mulPose(Axis.ZP.rotationDegrees(side * -75));
                 matrices.mulPose(Axis.XP.rotationDegrees(-45.0f - power * anim));
                 matrices.mulPose(Axis.YP.rotationDegrees(side * power * anim * 0.5f));
             }
-            default -> {
+            default -> { // Мод 5
                 float strength = power / 80.0f;
                 float swing = anim * anim;
                 float twist = (float) Math.sin((swingProgress * swingProgress) * Math.PI);
@@ -78,6 +70,8 @@ public class SwingAnimation {
                 matrices.mulPose(Axis.YP.rotationDegrees(side * -45.0f));
             }
         }
+
+        return true;
     }
 
     public static void toggle(Minecraft client) {

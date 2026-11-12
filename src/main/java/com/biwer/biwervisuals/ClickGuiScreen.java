@@ -2,982 +2,485 @@ package com.biwer.biwervisuals;
 
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.CharacterEvent;
+import net.minecraft.client.input.KeyEvent;
+import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
+import org.lwjgl.glfw.GLFW;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.function.BooleanSupplier;
+import java.util.function.Consumer;
+import java.util.function.IntConsumer;
 
 public class ClickGuiScreen extends Screen {
     private final Screen parent;
 
-    private final int bgColor = 0xCC101020;
+    private final int moduleBg = 0xCC14141F;
+    private final int activeColor = 0xFFAB9FF2;
     private final int textColor = 0xFFFFFFFF;
-    private final int activeColor = 0xFFFF69B4;
-    private final int inactiveColor = 0xFF2A2A40;
-    private final int disabledColor = 0xFF1A1A25;
+    private final int textMuted = 0xFF8888AA;
+    private final int sliderBg = 0xFF333333;
 
-    // --- CustomSky: раскладка панели северного сияния (смещения от skyY) ---
-    private static final int SKY_PANEL_BOTTOM = 112;
-    private static final int SKY_AURORA_PANEL_BOTTOM = 203;
-    private static final int SKY_AURORA_TOGGLE_Y = 113;
-    private static final int SKY_AURORA_BOTTOM_LABEL_Y = 126;
-    private static final int SKY_AURORA_BOTTOM_SLIDER_Y = 139;
-    private static final int SKY_AURORA_TOP_LABEL_Y = 153;
-    private static final int SKY_AURORA_TOP_SLIDER_Y = 166;
-    private static final int SKY_AURORA_BRIGHT_LABEL_Y = 181;
-    private static final int SKY_AURORA_BRIGHT_SLIDER_Y = 193;
+    private String searchQuery = "";
+    private final List<Category> categories = new ArrayList<>();
+    private SettingEntry draggingSetting = null;
+
+    // Инициализация кастомного шрифта
+    private final CustomFont customFont = new CustomFont(
+            Identifier.fromNamespaceAndPath("biwervisuals", "fonts/icons.json"),
+            Identifier.fromNamespaceAndPath("biwervisuals", "fonts/icons.png")
+    );
+
+    private static class Category {
+        String name;
+        List<ModuleEntry> modules = new ArrayList<>();
+        int x, y, width;
+        Category(String name) { this.name = name; }
+    }
+
+    private static class ModuleEntry {
+        String name;
+        boolean enabled;
+        boolean expanded = false;
+        int x, y, width, height = 16;
+        float animState = 0.0f;
+        float expandAnim = 0.0f;
+        List<SettingEntry> settings = new ArrayList<>();
+        List<BooleanSetting> booleans = new ArrayList<>();
+        List<ModeSetting> modes = new ArrayList<>();
+        List<ColorSetting> colors = new ArrayList<>();
+
+        ModuleEntry(String name, boolean enabled) {
+            this.name = name;
+            this.enabled = enabled;
+        }
+    }
+
+    private static class SettingEntry {
+        String name;
+        float value;
+        int x, y, width, height = 12;
+        Consumer<Float> onChange;
+        BooleanSupplier visible;
+
+        SettingEntry(String name, float value, Consumer<Float> onChange) {
+            this(name, value, onChange, () -> true);
+        }
+
+        SettingEntry(String name, float value, Consumer<Float> onChange, BooleanSupplier visible) {
+            this.name = name;
+            this.value = value;
+            this.onChange = onChange;
+            this.visible = visible;
+        }
+    }
+
+    private static class BooleanSetting {
+        String name;
+        boolean value;
+        int x, y, width, height = 12;
+        Consumer<Boolean> onChange;
+        BooleanSupplier visible;
+
+        BooleanSetting(String name, boolean value, Consumer<Boolean> onChange) {
+            this(name, value, onChange, () -> true);
+        }
+
+        BooleanSetting(String name, boolean value, Consumer<Boolean> onChange, BooleanSupplier visible) {
+            this.name = name;
+            this.value = value;
+            this.onChange = onChange;
+            this.visible = visible;
+        }
+    }
+
+    private static class ModeSetting {
+        String name;
+        String[] options;
+        int index;
+        int x, y, width, height = 12;
+        IntConsumer onChange;
+        BooleanSupplier visible;
+
+        ModeSetting(String name, String[] options, int index, IntConsumer onChange) {
+            this(name, options, index, onChange, () -> true);
+        }
+
+        ModeSetting(String name, String[] options, int index, IntConsumer onChange, BooleanSupplier visible) {
+            this.name = name;
+            this.options = options;
+            this.index = index;
+            this.onChange = onChange;
+            this.visible = visible;
+        }
+
+        String current() {
+            return options[Math.max(0, Math.min(options.length - 1, index))];
+        }
+    }
+
+    private static class ColorSetting {
+        String name;
+        int color;
+        int x, y, width, height = 12;
+        IntConsumer onChange;
+        BooleanSupplier visible;
+        boolean open = false;
+
+        ColorSetting(String name, int color, IntConsumer onChange) {
+            this(name, color, onChange, () -> true);
+        }
+
+        ColorSetting(String name, int color, IntConsumer onChange, BooleanSupplier visible) {
+            this.name = name;
+            this.color = color & 0xFFFFFF;
+            this.onChange = onChange;
+            this.visible = visible;
+        }
+    }
 
     public ClickGuiScreen(Screen parent) {
         super(Component.literal("Biwer Visuals"));
         this.parent = parent;
+        initModules();
+    }
+
+    private void initModules() {
+        // ================= COMBAT =================
+        Category combat = new Category("Combat");
+
+        ModuleEntry killAura = new ModuleEntry("KillAura", BiwerVisualsClient.CONFIG.killAuraEnabled);
+        killAura.settings.add(new SettingEntry("Дистанция", (BiwerVisualsClient.CONFIG.killAuraRange - 1f) / 5f, v -> BiwerVisualsClient.CONFIG.killAuraRange = 1f + v * 5f));
+        killAura.settings.add(new SettingEntry("Плавность", BiwerVisualsClient.CONFIG.killAuraSmooth / 100f, v -> BiwerVisualsClient.CONFIG.killAuraSmooth = v * 100f));
+        killAura.modes.add(new ModeSetting("Наводка", new String[]{"Свободно", "Преследование", "Наводка"}, BiwerVisualsClient.CONFIG.aimMode, v -> BiwerVisualsClient.CONFIG.aimMode = v));
+        killAura.booleans.add(new BooleanSetting("Криты", BiwerVisualsClient.CONFIG.onlyCriticals, v -> BiwerVisualsClient.CONFIG.onlyCriticals = v));
+        combat.modules.add(killAura);
+
+        ModuleEntry aura = new ModuleEntry("Aura", BiwerVisualsClient.CONFIG.auraEnabled);
+        aura.settings.add(new SettingEntry("Дистанция", (BiwerVisualsClient.CONFIG.auraRange - 0.1f) / 5.9f, v -> BiwerVisualsClient.CONFIG.auraRange = 0.1f + v * 5.9f));
+        aura.modes.add(new ModeSetting("Наводка", new String[]{"ФанТайм", "ФанТайм ФОВ", "Легит"}, BiwerVisualsClient.CONFIG.auraAimMode, v -> BiwerVisualsClient.CONFIG.auraAimMode = v));
+        aura.booleans.add(new BooleanSetting("Криты", BiwerVisualsClient.CONFIG.auraOnlyCriticals, v -> BiwerVisualsClient.CONFIG.auraOnlyCriticals = v));
+        combat.modules.add(aura);
+
+        ModuleEntry triggerBot = new ModuleEntry("TriggerBot", BiwerVisualsClient.CONFIG.triggerBotEnabled);
+        triggerBot.settings.add(new SettingEntry("Дистанция", (BiwerVisualsClient.CONFIG.triggerBotRange - 0.5f) / 4.5f, v -> BiwerVisualsClient.CONFIG.triggerBotRange = 0.5f + v * 4.5f));
+        combat.modules.add(triggerBot);
+
+        ModuleEntry aimAssist = new ModuleEntry("AimAssistant", BiwerVisualsClient.CONFIG.aimAssistEnabled);
+        aimAssist.settings.add(new SettingEntry("Сила", BiwerVisualsClient.CONFIG.aimAssistStrength / 100f, v -> BiwerVisualsClient.CONFIG.aimAssistStrength = v * 100f));
+        combat.modules.add(aimAssist);
+
+        ModuleEntry velocity = new ModuleEntry("Velocity", BiwerVisualsClient.CONFIG.velocityEnabled);
+        velocity.settings.add(new SettingEntry("Сила", BiwerVisualsClient.CONFIG.velocityPercent / 100f, v -> BiwerVisualsClient.CONFIG.velocityPercent = v * 100f));
+        combat.modules.add(velocity);
+
+        categories.add(combat);
+
+        // ================= MOVEMENT =================
+        Category movement = new Category("Movement");
+        movement.modules.add(new ModuleEntry("Fly", BiwerVisualsClient.CONFIG.flyEnabled));
+        movement.modules.add(new ModuleEntry("Sprint", BiwerVisualsClient.CONFIG.sprintEnabled));
+
+        ModuleEntry speed = new ModuleEntry("Speed", BiwerVisualsClient.CONFIG.speedEnabled);
+        speed.settings.add(new SettingEntry("Буст", (BiwerVisualsClient.CONFIG.speedPercent - 5f) / 55f, v -> BiwerVisualsClient.CONFIG.speedPercent = 5f + v * 55f));
+        movement.modules.add(speed);
+
+        ModuleEntry bunnyHop = new ModuleEntry("BunnyHop", BiwerVisualsClient.CONFIG.bunnyHopEnabled);
+        bunnyHop.settings.add(new SettingEntry("Задержка", BiwerVisualsClient.CONFIG.bhopJumpDelay / 20f, v -> BiwerVisualsClient.CONFIG.bhopJumpDelay = (int)(v * 20f)));
+        movement.modules.add(bunnyHop);
+
+        ModuleEntry targetStrafe = new ModuleEntry("TargetStrafe", BiwerVisualsClient.CONFIG.targetStrafeEnabled);
+        targetStrafe.settings.add(new SettingEntry("Дистанция", (BiwerVisualsClient.CONFIG.strafeRange - 0.5f) / 3.5f, v -> BiwerVisualsClient.CONFIG.strafeRange = 0.5f + v * 3.5f));
+        movement.modules.add(targetStrafe);
+
+        categories.add(movement);
+
+        // ================= RENDER =================
+        Category render = new Category("Render");
+
+        ModuleEntry ambience = new ModuleEntry("Ambience", BiwerVisualsClient.CONFIG.ambienceEnabled);
+        ambience.modes.add(new ModeSetting("Время", new String[]{"Реальное", "Рассвет", "День", "Ночь", "Полночь"}, BiwerVisualsClient.CONFIG.activeTimeButton, v -> BiwerVisualsClient.CONFIG.activeTimeButton = v));
+        ambience.modes.add(new ModeSetting("Погода", new String[]{"Реальная", "Ясно", "Дождь", "Гроза"}, BiwerVisualsClient.CONFIG.activeWeatherButton, v -> BiwerVisualsClient.CONFIG.activeWeatherButton = v));
+        render.modules.add(ambience);
+
+        ModuleEntry viewmodel = new ModuleEntry("Viewmodel", BiwerVisualsClient.CONFIG.viewmodelEnabled);
+        viewmodel.settings.add(new SettingEntry("Main X", (BiwerVisualsClient.CONFIG.vmMainX + 2f) / 4f, v -> BiwerVisualsClient.CONFIG.vmMainX = v * 4f - 2f));
+        viewmodel.settings.add(new SettingEntry("Main Y", (BiwerVisualsClient.CONFIG.vmMainY + 2f) / 4f, v -> BiwerVisualsClient.CONFIG.vmMainY = v * 4f - 2f));
+        viewmodel.settings.add(new SettingEntry("Main Z", (BiwerVisualsClient.CONFIG.vmMainZ + 2f) / 4f, v -> BiwerVisualsClient.CONFIG.vmMainZ = v * 4f - 2f));
+        render.modules.add(viewmodel);
+
+        ModuleEntry esp = new ModuleEntry("EntityESP", BiwerVisualsClient.CONFIG.espEnabled);
+        esp.booleans.add(new BooleanSetting("Игроки", BiwerVisualsClient.CONFIG.espPlayers, v -> BiwerVisualsClient.CONFIG.espPlayers = v));
+        esp.booleans.add(new BooleanSetting("Мобы", BiwerVisualsClient.CONFIG.espMobs, v -> BiwerVisualsClient.CONFIG.espMobs = v));
+        render.modules.add(esp);
+
+        ModuleEntry tags = new ModuleEntry("Tags", BiwerVisualsClient.CONFIG.tagsEnabled);
+        tags.booleans.add(new BooleanSetting("Игроки", BiwerVisualsClient.CONFIG.tagsPlayers, v -> BiwerVisualsClient.CONFIG.tagsPlayers = v));
+        tags.booleans.add(new BooleanSetting("Мобы", BiwerVisualsClient.CONFIG.tagsMobs, v -> BiwerVisualsClient.CONFIG.tagsMobs = v));
+        render.modules.add(tags);
+
+        render.modules.add(new ModuleEntry("JumpCircles", BiwerVisualsClient.CONFIG.jumpCirclesEnabled));
+
+        ModuleEntry customSky = new ModuleEntry("CustomSky", BiwerVisualsClient.CONFIG.customSkyEnabled);
+        customSky.modes.add(new ModeSetting("Режим", new String[]{"Закат", "Аврора", "Космос", "Неон", "Перелив"}, BiwerVisualsClient.CONFIG.skyMode, v -> BiwerVisualsClient.CONFIG.skyMode = v));
+        customSky.settings.add(new SettingEntry("Звёзды", BiwerVisualsClient.CONFIG.skyStars / 100f, v -> BiwerVisualsClient.CONFIG.skyStars = v * 100f));
+        customSky.booleans.add(new BooleanSetting("Сияние", BiwerVisualsClient.CONFIG.auroraEnabled, v -> BiwerVisualsClient.CONFIG.auroraEnabled = v));
+        customSky.colors.add(new ColorSetting("Низ сияния", BiwerVisualsClient.CONFIG.auroraColorBottom, v -> BiwerVisualsClient.CONFIG.auroraColorBottom = v));
+        customSky.colors.add(new ColorSetting("Верх сияния", BiwerVisualsClient.CONFIG.auroraColorTop, v -> BiwerVisualsClient.CONFIG.auroraColorTop = v));
+        render.modules.add(customSky);
+
+        ModuleEntry chinaHat = new ModuleEntry("ChinaHat", BiwerVisualsClient.CONFIG.chinaHatEnabled);
+        chinaHat.booleans.add(new BooleanSetting("На себя", BiwerVisualsClient.CONFIG.chinaHatSelf, v -> BiwerVisualsClient.CONFIG.chinaHatSelf = v));
+        chinaHat.booleans.add(new BooleanSetting("На друзей", BiwerVisualsClient.CONFIG.chinaHatFriends, v -> BiwerVisualsClient.CONFIG.chinaHatFriends = v));
+        chinaHat.booleans.add(new BooleanSetting("На всех", BiwerVisualsClient.CONFIG.chinaHatAll, v -> BiwerVisualsClient.CONFIG.chinaHatAll = v));
+        chinaHat.colors.add(new ColorSetting("Цвет шляпы", BiwerVisualsClient.CONFIG.chinaHatColor, v -> BiwerVisualsClient.CONFIG.chinaHatColor = v));
+        render.modules.add(chinaHat);
+
+        categories.add(render);
+
+        // ================= PLAYER =================
+        Category player = new Category("Player");
+        ModuleEntry autoTotem = new ModuleEntry("AutoTotem", BiwerVisualsClient.CONFIG.autoTotemEnabled);
+        autoTotem.settings.add(new SettingEntry("Задержка", (BiwerVisualsClient.CONFIG.autoTotemDelay - 1f) / 19f, v -> BiwerVisualsClient.CONFIG.autoTotemDelay = 1 + (int)(v * 19f)));
+        player.modules.add(autoTotem);
+        player.modules.add(new ModuleEntry("HUD", BiwerVisualsClient.CONFIG.hudEnabled));
+        categories.add(player);
+
+        // ================= MISC =================
+        Category misc = new Category("Misc");
+        ModuleEntry fullBright = new ModuleEntry("FullBright", BiwerVisualsClient.CONFIG.fullBrightEnabled);
+        fullBright.modes.add(new ModeSetting("Режим", new String[]{"Гамма", "Ночное зрение"}, BiwerVisualsClient.CONFIG.fullBrightMode, v -> BiwerVisualsClient.CONFIG.fullBrightMode = v));
+        misc.modules.add(fullBright);
+
+        ModuleEntry crosshair = new ModuleEntry("Crosshair", BiwerVisualsClient.CONFIG.crosshairEnabled);
+        crosshair.settings.add(new SettingEntry("Зазор", BiwerVisualsClient.CONFIG.crosshairGap / 6f, v -> BiwerVisualsClient.CONFIG.crosshairGap = v * 6f));
+        misc.modules.add(crosshair);
+
+        ModuleEntry swing = new ModuleEntry("SwingAnimation", BiwerVisualsClient.CONFIG.swingAnimationEnabled);
+        swing.modes.add(new ModeSetting("Режим", new String[]{"Мод 1", "Мод 2", "Мод 3", "Мод 4", "Мод 5"}, BiwerVisualsClient.CONFIG.swingAnimationMode, v -> BiwerVisualsClient.CONFIG.swingAnimationMode = v));
+        swing.settings.add(new SettingEntry("Угол", BiwerVisualsClient.CONFIG.swingAngle / 360f, v -> BiwerVisualsClient.CONFIG.swingAngle = v * 360f, () -> BiwerVisualsClient.CONFIG.swingAnimationMode == 0));
+        swing.settings.add(new SettingEntry("Наклон", (BiwerVisualsClient.CONFIG.swingTipTilt + 90f) / 180f, v -> BiwerVisualsClient.CONFIG.swingTipTilt = v * 180f - 90f, () -> BiwerVisualsClient.CONFIG.swingAnimationMode != 4));
+        swing.settings.add(new SettingEntry("Интенсивность", (BiwerVisualsClient.CONFIG.swingPower - 1f) / 9f, v -> BiwerVisualsClient.CONFIG.swingPower = 1f + v * 9f));
+        misc.modules.add(swing);
+
+        misc.modules.add(new ModuleEntry("SeeInvisibles", BiwerVisualsClient.CONFIG.seeInvisiblesEnabled));
+        categories.add(misc);
     }
 
     @Override
     public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float delta) {
+        int colWidth = 120, gap = 6;
+        int totalWidth = (colWidth * categories.size()) + (gap * (categories.size() - 1));
+        int startX = (this.width - totalWidth) / 2, startY = 40;
+
+        graphics.fill(0, 0, this.width, this.height, 0x88000000);
+        drawRoundedRect(graphics, (this.width - 220) / 2, 10, 220, 20, 4, moduleBg);
+
+        // CUSTOM FONT
+        customFont.drawText(graphics, "Поиск: " + searchQuery, (this.width - 220) / 2 + 6, 16, 8.5f, textColor);
+
+        int currentX = startX;
+        for (Category cat : categories) {
+            cat.x = currentX; cat.y = startY; cat.width = colWidth;
+            renderCategory(graphics, cat, mouseX, mouseY, delta);
+            currentX += colWidth + gap;
+        }
         super.extractRenderState(graphics, mouseX, mouseY, delta);
+    }
 
-        int colWidth = 120;
-        int padding = 5;
-        int totalWidth = (colWidth * 5) + (padding * 4);
-        int startX = (this.width - totalWidth) / 2;
-        int startY = 20;
-        int colHeight = 510; // Увеличили под все блоки
+    private void renderCategory(GuiGraphicsExtractor graphics, Category cat, int mouseX, int mouseY, float delta) {
+        drawRoundedRect(graphics, cat.x, cat.y, cat.width, 18, 4, moduleBg);
 
-        // --- КОЛОНКА COMBAT ---
-        graphics.fill(startX, startY, startX + colWidth, startY + colHeight, bgColor);
-        graphics.text(this.font, "Combat", startX + 10, startY + 10, textColor, false);
+        // CUSTOM FONT
+        customFont.drawText(graphics, cat.name, cat.x + 6, cat.y + 5, 8.5f, activeColor);
 
-        int combatY = startY + 30;
-        graphics.text(this.font, "KillAura", startX + 10, combatY + 5, textColor, false);
-        drawToggle(graphics, startX + 90, combatY + 5, 20, 10, BiwerVisualsClient.CONFIG.killAuraEnabled);
+        int moduleY = cat.y + 24;
+        for (ModuleEntry module : cat.modules) {
+            if (!searchQuery.isEmpty() && !module.name.toLowerCase().contains(searchQuery.toLowerCase())) continue;
 
-        if (!BiwerVisualsClient.CONFIG.killAuraCollapsed) {
-            graphics.fill(startX + 5, combatY + 15, startX + colWidth - 5, combatY + 302, 0xAA000000);
+            module.x = cat.x + 2; module.y = moduleY; module.width = cat.width - 4;
+            module.animState += ((module.enabled ? 1f : 0f) - module.animState) * 0.2f;
+            module.expandAnim += ((module.expanded ? 1f : 0f) - module.expandAnim) * 0.2f;
 
-            graphics.text(this.font, "Дистанция: " + String.format("%.1f", BiwerVisualsClient.CONFIG.killAuraRange), startX + 10, combatY + 20, 0xFFAAAAAA, false);
-            drawSlider(graphics, startX + 10, combatY + 32, 100, 4, BiwerVisualsClient.CONFIG.killAuraRange, 1.0f, 6.0f, "");
+            drawRoundedRect(graphics, module.x, module.y, module.width, module.height, 3, module.enabled ? 0x33AB9FF2 : 0x22000000);
 
-            graphics.text(this.font, "Наведение:", startX + 10, combatY + 45, 0xFFAAAAAA, false);
-            drawButton(graphics, "Свободно", startX + 10, combatY + 57, 35, 12, mouseX, mouseY, BiwerVisualsClient.CONFIG.aimMode == 0, true);
-            drawButton(graphics, "Плавно", startX + 48, combatY + 57, 35, 12, mouseX, mouseY, BiwerVisualsClient.CONFIG.aimMode == 1, true);
-            drawButton(graphics, "Резко", startX + 86, combatY + 57, 25, 12, mouseX, mouseY, BiwerVisualsClient.CONFIG.aimMode == 2, true);
+            // CUSTOM FONT
+            customFont.drawText(graphics, module.name, module.x + 6, module.y + 4, 8.5f, module.enabled ? activeColor : textMuted);
 
-            drawToggle(graphics, startX + 10, combatY + 75, 15, 8, BiwerVisualsClient.CONFIG.onlyCriticals);
-            graphics.text(this.font, "Только криты", startX + 30, combatY + 75, 0xFFAAAAAA, false);
+            int toggleX = module.x + module.width - 16, toggleY = module.y + 4;
+            drawRoundedRect(graphics, toggleX, toggleY, 12, 8, 4, sliderBg);
+            drawRoundedRect(graphics, (int)(toggleX + 1 + (module.animState * 6)), toggleY + 1, 6, 6, 3, module.enabled ? activeColor : 0xFFFFFFFF);
 
-            drawToggle(graphics, startX + 10, combatY + 88, 15, 8, BiwerVisualsClient.CONFIG.adaptiveHits);
-            graphics.text(this.font, "Адаптивные удары", startX + 30, combatY + 88, 0xFFAAAAAA, false);
+            // CUSTOM FONT (стрелочка)
+            customFont.drawText(graphics, module.expanded ? "v" : ">", toggleX - 10, module.y + 4, 8.5f, textMuted);
 
-            drawToggle(graphics, startX + 10, combatY + 101, 15, 8, BiwerVisualsClient.CONFIG.shieldBreaker);
-            graphics.text(this.font, "Пробитие щита", startX + 30, combatY + 101, 0xFFAAAAAA, false);
+            int settingsY = module.y + module.height + 2;
+            if (module.expandAnim > 0.01f) {
+                for (SettingEntry s : module.settings) {
+                    if (!s.visible.getAsBoolean()) continue;
+                    s.x = module.x + 2; s.y = settingsY; s.width = module.width - 4;
 
-            drawToggle(graphics, startX + 10, combatY + 114, 15, 8, BiwerVisualsClient.CONFIG.smartSprint);
-            graphics.text(this.font, "Умный спринт", startX + 30, combatY + 114, 0xFFAAAAAA, false);
+                    // CUSTOM FONT
+                    customFont.drawText(graphics, s.name, s.x + 2, s.y, 8.0f, textMuted);
 
-            graphics.text(this.font, "Цели:", startX + 10, combatY + 130, 0xFFAAAAAA, false);
-            drawButton(graphics, "Игроки", startX + 10, combatY + 142, 50, 12, mouseX, mouseY, BiwerVisualsClient.CONFIG.targetPlayers, true);
-            drawButton(graphics, "Мобы", startX + 65, combatY + 142, 50, 12, mouseX, mouseY, BiwerVisualsClient.CONFIG.targetMobs, true);
-            drawButton(graphics, "Животные", startX + 10, combatY + 156, 50, 12, mouseX, mouseY, BiwerVisualsClient.CONFIG.targetAnimals, true);
-            drawButton(graphics, "Без брони", startX + 65, combatY + 156, 50, 12, mouseX, mouseY, BiwerVisualsClient.CONFIG.targetNaked, true);
+                    graphics.fill(s.x + 2, s.y + 8, s.x + s.width - 2, s.y + 11, sliderBg);
+                    graphics.fill(s.x + 2, s.y + 8, s.x + 2 + (int)((s.width - 4) * s.value), s.y + 11, activeColor);
+                    settingsY += 16;
+                }
+                for (BooleanSetting b : module.booleans) {
+                    if (!b.visible.getAsBoolean()) continue;
+                    b.x = module.x + 2; b.y = settingsY; b.width = module.width - 4;
 
-            graphics.text(this.font, "Не бить если:", startX + 10, combatY + 172, 0xFFAAAAAA, false);
-            drawToggle(graphics, startX + 10, combatY + 184, 15, 8, BiwerVisualsClient.CONFIG.dontHitItemUse);
-            graphics.text(this.font, "Юзаю предмет", startX + 30, combatY + 184, 0xFFAAAAAA, false);
+                    // CUSTOM FONT
+                    customFont.drawText(graphics, b.name, b.x + 2, b.y, 8.0f, textMuted);
 
-            drawToggle(graphics, startX + 10, combatY + 197, 15, 8, BiwerVisualsClient.CONFIG.dontHitContainer);
-            graphics.text(this.font, "Открыт инв.", startX + 30, combatY + 197, 0xFFAAAAAA, false);
+                    drawRoundedRect(graphics, b.x + b.width - 14, b.y - 1, 10, 10, 3, sliderBg);
+                    if (b.value) drawRoundedRect(graphics, b.x + b.width - 12, b.y + 1, 6, 6, 2, activeColor);
+                    settingsY += 14;
+                }
+                for (ModeSetting m : module.modes) {
+                    if (!m.visible.getAsBoolean()) continue;
+                    m.x = module.x + 2; m.y = settingsY; m.width = module.width - 4;
 
-            graphics.text(this.font, "Наводка:", startX + 10, combatY + 212, 0xFFAAAAAA, false);
+                    // CUSTOM FONT
+                    customFont.drawText(graphics, m.name + ": " + m.current(), m.x + 2, m.y, 8.0f, activeColor);
+                    settingsY += 14;
+                }
+                for (ColorSetting c : module.colors) {
+                    if (!c.visible.getAsBoolean()) continue;
+                    c.x = module.x + 2; c.y = settingsY; c.width = module.width - 4;
 
-            graphics.text(this.font, "Плавность: " + (int) BiwerVisualsClient.CONFIG.killAuraSmooth + "%", startX + 10, combatY + 225, 0xFFAAAAAA, false);
-            drawSlider(graphics, startX + 10, combatY + 237, 100, 4, BiwerVisualsClient.CONFIG.killAuraSmooth, 5, 100, "");
+                    // CUSTOM FONT
+                    customFont.drawText(graphics, c.name, c.x + 2, c.y, 8.0f, textMuted);
 
-            graphics.text(this.font, "Скорость: " + (int) BiwerVisualsClient.CONFIG.killAuraSpeed + "°/т", startX + 10, combatY + 250, 0xFFAAAAAA, false);
-            drawSlider(graphics, startX + 10, combatY + 262, 100, 4, BiwerVisualsClient.CONFIG.killAuraSpeed, 1, 30, "");
-
-            graphics.text(this.font, "Угол: " + (int) BiwerVisualsClient.CONFIG.killAuraFov + "°", startX + 10, combatY + 275, 0xFFAAAAAA, false);
-            drawSlider(graphics, startX + 10, combatY + 287, 100, 4, BiwerVisualsClient.CONFIG.killAuraFov, 30, 180, "");
-        }
-
-        // --- AURA (порт) ---
-        int auraY = combatY + (BiwerVisualsClient.CONFIG.killAuraCollapsed ? 30 : 310);
-        graphics.text(this.font, "Aura", startX + 10, auraY + 5, textColor, false);
-        drawToggle(graphics, startX + 90, auraY + 5, 20, 10, BiwerVisualsClient.CONFIG.auraEnabled);
-
-        if (!BiwerVisualsClient.CONFIG.auraCollapsed) {
-            graphics.fill(startX + 5, auraY + 15, startX + colWidth - 5, auraY + 250, 0xAA000000);
-
-            graphics.text(this.font, "Дистанция: " + String.format("%.1f", BiwerVisualsClient.CONFIG.auraRange), startX + 10, auraY + 20, 0xFFAAAAAA, false);
-            drawSlider(graphics, startX + 10, auraY + 32, 100, 4, BiwerVisualsClient.CONFIG.auraRange, 0.1f, 6.0f, "");
-
-            graphics.text(this.font, "Доп.: " + String.format("%.1f", BiwerVisualsClient.CONFIG.auraExtraRange), startX + 10, auraY + 45, 0xFFAAAAAA, false);
-            drawSlider(graphics, startX + 10, auraY + 57, 100, 4, BiwerVisualsClient.CONFIG.auraExtraRange, 0.0f, 3.0f, "");
-
-            graphics.text(this.font, "Наведение:", startX + 10, auraY + 70, 0xFFAAAAAA, false);
-            drawButton(graphics, "ФанТайм", startX + 10, auraY + 82, 42, 12, mouseX, mouseY, BiwerVisualsClient.CONFIG.auraAimMode == 0, true);
-            drawButton(graphics, "ФОВ", startX + 55, auraY + 82, 27, 12, mouseX, mouseY, BiwerVisualsClient.CONFIG.auraAimMode == 1, true);
-            drawButton(graphics, "Легит", startX + 85, auraY + 82, 30, 12, mouseX, mouseY, BiwerVisualsClient.CONFIG.auraAimMode == 2, true);
-
-            graphics.text(this.font, "Приоритет:", startX + 10, auraY + 98, 0xFFAAAAAA, false);
-            drawButton(graphics, "Прицел", startX + 10, auraY + 110, 42, 12, mouseX, mouseY, BiwerVisualsClient.CONFIG.auraPriority == 0, true);
-            drawButton(graphics, "Дист", startX + 56, auraY + 110, 28, 12, mouseX, mouseY, BiwerVisualsClient.CONFIG.auraPriority == 1, true);
-            drawButton(graphics, "ХП", startX + 88, auraY + 110, 26, 12, mouseX, mouseY, BiwerVisualsClient.CONFIG.auraPriority == 2, true);
-
-            drawToggle(graphics, startX + 10, auraY + 126, 15, 8, BiwerVisualsClient.CONFIG.auraPlayers);
-            graphics.text(this.font, "Игроки", startX + 30, auraY + 126, 0xFFAAAAAA, false);
-            drawToggle(graphics, startX + 70, auraY + 126, 15, 8, BiwerVisualsClient.CONFIG.auraMobs);
-            graphics.text(this.font, "Мобы", startX + 90, auraY + 126, 0xFFAAAAAA, false);
-
-            drawToggle(graphics, startX + 10, auraY + 139, 15, 8, BiwerVisualsClient.CONFIG.auraAnimals);
-            graphics.text(this.font, "Животные", startX + 30, auraY + 139, 0xFFAAAAAA, false);
-
-            drawToggle(graphics, startX + 10, auraY + 152, 15, 8, BiwerVisualsClient.CONFIG.auraOnlyCriticals);
-            graphics.text(this.font, "Криты", startX + 30, auraY + 152, 0xFFAAAAAA, false);
-            drawToggle(graphics, startX + 66, auraY + 152, 15, 8, BiwerVisualsClient.CONFIG.auraAdaptiveHits);
-            graphics.text(this.font, "Адапт", startX + 86, auraY + 152, 0xFFAAAAAA, false);
-
-            drawToggle(graphics, startX + 10, auraY + 165, 15, 8, BiwerVisualsClient.CONFIG.auraShieldBreaker);
-            graphics.text(this.font, "Щит", startX + 30, auraY + 165, 0xFFAAAAAA, false);
-            drawToggle(graphics, startX + 70, auraY + 165, 15, 8, BiwerVisualsClient.CONFIG.auraSmartSprint);
-            graphics.text(this.font, "Бег", startX + 90, auraY + 165, 0xFFAAAAAA, false);
-
-            drawToggle(graphics, startX + 10, auraY + 178, 15, 8, BiwerVisualsClient.CONFIG.auraDontHitItemUse);
-            graphics.text(this.font, "Предмет", startX + 30, auraY + 178, 0xFFAAAAAA, false);
-            drawToggle(graphics, startX + 70, auraY + 178, 15, 8, BiwerVisualsClient.CONFIG.auraDontHitContainer);
-            graphics.text(this.font, "Инв.", startX + 90, auraY + 178, 0xFFAAAAAA, false);
-
-            drawToggle(graphics, startX + 10, auraY + 191, 15, 8, BiwerVisualsClient.CONFIG.auraDontHitThroughWalls);
-            graphics.text(this.font, "Стены", startX + 30, auraY + 191, 0xFFAAAAAA, false);
-
-            graphics.text(this.font, "Скорость: " + (int) BiwerVisualsClient.CONFIG.auraSpeed + "°/т", startX + 10, auraY + 204, 0xFFAAAAAA, false);
-            drawSlider(graphics, startX + 10, auraY + 216, 100, 4, BiwerVisualsClient.CONFIG.auraSpeed, 1.0f, 30.0f, "");
-
-            graphics.text(this.font, "Плавность: " + (int) BiwerVisualsClient.CONFIG.auraSmooth + "%", startX + 10, auraY + 229, 0xFFAAAAAA, false);
-            drawSlider(graphics, startX + 10, auraY + 241, 100, 4, BiwerVisualsClient.CONFIG.auraSmooth, 5.0f, 100.0f, "");
-        }
-
-        // --- TRIGGERBOT ---
-        int triggerY = auraY + (BiwerVisualsClient.CONFIG.auraCollapsed ? 30 : 260);
-        graphics.text(this.font, "TriggerBot", startX + 10, triggerY + 5, textColor, false);
-        drawToggle(graphics, startX + 90, triggerY + 5, 20, 10, BiwerVisualsClient.CONFIG.triggerBotEnabled);
-
-        if (!BiwerVisualsClient.CONFIG.triggerBotCollapsed) {
-            graphics.fill(startX + 5, triggerY + 15, startX + colWidth - 5, triggerY + 96, 0xAA000000);
-
-            graphics.text(this.font, "Дистанция: " + String.format("%.1f", BiwerVisualsClient.CONFIG.triggerBotRange), startX + 10, triggerY + 20, 0xFFAAAAAA, false);
-            drawSlider(graphics, startX + 10, triggerY + 32, 100, 4, BiwerVisualsClient.CONFIG.triggerBotRange, 0.5f, 5.0f, "");
-
-            drawToggle(graphics, startX + 10, triggerY + 45, 15, 8, BiwerVisualsClient.CONFIG.triggerBotWeaponOnly);
-            graphics.text(this.font, "Только оружие", startX + 30, triggerY + 45, 0xFFAAAAAA, false);
-
-            drawToggle(graphics, startX + 10, triggerY + 58, 15, 8, BiwerVisualsClient.CONFIG.triggerBotOnlyCriticals);
-            graphics.text(this.font, "Криты", startX + 30, triggerY + 58, 0xFFAAAAAA, false);
-            drawToggle(graphics, startX + 70, triggerY + 58, 15, 8, BiwerVisualsClient.CONFIG.triggerBotDontHitThroughWalls);
-            graphics.text(this.font, "Стены", startX + 90, triggerY + 58, 0xFFAAAAAA, false);
-
-            drawToggle(graphics, startX + 10, triggerY + 71, 15, 8, BiwerVisualsClient.CONFIG.triggerBotPlayers);
-            graphics.text(this.font, "Игроки", startX + 30, triggerY + 71, 0xFFAAAAAA, false);
-            drawToggle(graphics, startX + 70, triggerY + 71, 15, 8, BiwerVisualsClient.CONFIG.triggerBotMobs);
-            graphics.text(this.font, "Мобы", startX + 90, triggerY + 71, 0xFFAAAAAA, false);
-
-            drawToggle(graphics, startX + 10, triggerY + 84, 15, 8, BiwerVisualsClient.CONFIG.triggerBotAnimals);
-            graphics.text(this.font, "Животные", startX + 30, triggerY + 84, 0xFFAAAAAA, false);
-        }
-
-        // --- AIMASSIST ---
-        int assistY = triggerY + (BiwerVisualsClient.CONFIG.triggerBotCollapsed ? 30 : 106);
-        graphics.text(this.font, "AimAssistant", startX + 10, assistY + 5, textColor, false);
-        drawToggle(graphics, startX + 90, assistY + 5, 20, 10, BiwerVisualsClient.CONFIG.aimAssistEnabled);
-
-        if (!BiwerVisualsClient.CONFIG.aimAssistCollapsed) {
-            graphics.fill(startX + 5, assistY + 15, startX + colWidth - 5, assistY + 96, 0xAA000000);
-
-            graphics.text(this.font, "Сила: " + (int) BiwerVisualsClient.CONFIG.aimAssistStrength + "%", startX + 10, assistY + 20, 0xFFAAAAAA, false);
-            drawSlider(graphics, startX + 10, assistY + 32, 100, 4, BiwerVisualsClient.CONFIG.aimAssistStrength, 5.0f, 100.0f, "");
-
-            drawToggle(graphics, startX + 10, assistY + 45, 15, 8, BiwerVisualsClient.CONFIG.aimAssistWeaponOnly);
-            graphics.text(this.font, "Только оружие", startX + 30, assistY + 45, 0xFFAAAAAA, false);
-
-            drawToggle(graphics, startX + 10, assistY + 58, 15, 8, BiwerVisualsClient.CONFIG.aimAssistThroughWalls);
-            graphics.text(this.font, "Через стены", startX + 30, assistY + 58, 0xFFAAAAAA, false);
-
-            drawToggle(graphics, startX + 10, assistY + 71, 15, 8, BiwerVisualsClient.CONFIG.aimAssistPlayers);
-            graphics.text(this.font, "Игроки", startX + 30, assistY + 71, 0xFFAAAAAA, false);
-            drawToggle(graphics, startX + 70, assistY + 71, 15, 8, BiwerVisualsClient.CONFIG.aimAssistMobs);
-            graphics.text(this.font, "Мобы", startX + 90, assistY + 71, 0xFFAAAAAA, false);
-
-            drawToggle(graphics, startX + 10, assistY + 84, 15, 8, BiwerVisualsClient.CONFIG.aimAssistAnimals);
-            graphics.text(this.font, "Животные", startX + 30, assistY + 84, 0xFFAAAAAA, false);
-        }
-
-        // --- КОЛОНКА MOVEMENT ---
-        int x2 = startX + colWidth + padding;
-        graphics.fill(x2, startY, x2 + colWidth, startY + colHeight, bgColor);
-        graphics.text(this.font, "Movement", x2 + 10, startY + 10, textColor, false);
-
-        // --- КОЛОНКА RENDER ---
-        int x3 = x2 + colWidth + padding;
-        graphics.fill(x3, startY, x3 + colWidth, startY + colHeight, bgColor);
-        graphics.text(this.font, "Render", x3 + 10, startY + 10, textColor, false);
-
-        // Ambience
-        int ambY = startY + 30;
-        graphics.text(this.font, "Ambience", x3 + 10, ambY + 5, textColor, false);
-        drawToggle(graphics, x3 + 90, ambY + 5, 20, 10, BiwerVisualsClient.CONFIG.ambienceEnabled);
-
-        if (!BiwerVisualsClient.CONFIG.ambienceCollapsed) {
-            graphics.fill(x3 + 5, ambY + 15, x3 + colWidth - 5, ambY + 140, 0xAA000000);
-
-            int timeColor = BiwerVisualsClient.CONFIG.ambienceEnabled ? 0xFFAAAAAA : 0xFF555555;
-            graphics.text(this.font, "Время", x3 + 10, ambY + 25, timeColor, false);
-            drawButton(graphics, "Рассвет", x3 + 10, ambY + 40, 50, 15, mouseX, mouseY, BiwerVisualsClient.CONFIG.activeTimeButton == 1, BiwerVisualsClient.CONFIG.ambienceEnabled);
-            drawButton(graphics, "День", x3 + 65, ambY + 40, 50, 15, mouseX, mouseY, BiwerVisualsClient.CONFIG.activeTimeButton == 2, BiwerVisualsClient.CONFIG.ambienceEnabled);
-            drawButton(graphics, "Ночь", x3 + 10, ambY + 60, 50, 15, mouseX, mouseY, BiwerVisualsClient.CONFIG.activeTimeButton == 3, BiwerVisualsClient.CONFIG.ambienceEnabled);
-            drawButton(graphics, "Полночь", x3 + 65, ambY + 60, 50, 15, mouseX, mouseY, BiwerVisualsClient.CONFIG.activeTimeButton == 4, BiwerVisualsClient.CONFIG.ambienceEnabled);
-
-            int weatherColor = BiwerVisualsClient.CONFIG.ambienceEnabled ? 0xFFAAAAAA : 0xFF555555;
-            graphics.text(this.font, "Погода", x3 + 10, ambY + 85, weatherColor, false);
-            drawButton(graphics, "Ясно", x3 + 10, ambY + 100, 50, 15, mouseX, mouseY, BiwerVisualsClient.CONFIG.activeWeatherButton == 1, BiwerVisualsClient.CONFIG.ambienceEnabled);
-            drawButton(graphics, "Дождь", x3 + 65, ambY + 100, 50, 15, mouseX, mouseY, BiwerVisualsClient.CONFIG.activeWeatherButton == 2, BiwerVisualsClient.CONFIG.ambienceEnabled);
-            drawButton(graphics, "Гроза", x3 + 10, ambY + 120, 105, 15, mouseX, mouseY, BiwerVisualsClient.CONFIG.activeWeatherButton == 3, BiwerVisualsClient.CONFIG.ambienceEnabled);
-        }
-
-        // Viewmodel
-        int vmY = ambY + (BiwerVisualsClient.CONFIG.ambienceCollapsed ? 30 : 150);
-        graphics.text(this.font, "Viewmodel", x3 + 10, vmY + 5, textColor, false);
-        drawToggle(graphics, x3 + 90, vmY + 5, 20, 10, BiwerVisualsClient.CONFIG.viewmodelEnabled);
-
-        if (!BiwerVisualsClient.CONFIG.viewmodelCollapsed) {
-            graphics.fill(x3 + 5, vmY + 15, x3 + colWidth - 5, vmY + 160, 0xAA000000);
-            if (BiwerVisualsClient.CONFIG.viewmodelEnabled) {
-                drawToggle(graphics, x3 + 10, vmY + 20, 15, 8, BiwerVisualsClient.CONFIG.vmPos);
-                graphics.text(this.font, "Позиция", x3 + 30, vmY + 20, 0xFFAAAAAA, false);
-                drawSlider(graphics, x3 + 10, vmY + 32, 100, 4, BiwerVisualsClient.CONFIG.vmPosX, -2, 2, "X");
-                drawSlider(graphics, x3 + 10, vmY + 42, 100, 4, BiwerVisualsClient.CONFIG.vmPosY, -2, 2, "Y");
-                drawSlider(graphics, x3 + 10, vmY + 52, 100, 4, BiwerVisualsClient.CONFIG.vmPosZ, -2, 2, "Z");
-
-                drawToggle(graphics, x3 + 10, vmY + 65, 15, 8, BiwerVisualsClient.CONFIG.vmRot);
-                graphics.text(this.font, "Поворот", x3 + 30, vmY + 65, 0xFFAAAAAA, false);
-                drawSlider(graphics, x3 + 10, vmY + 77, 100, 4, BiwerVisualsClient.CONFIG.vmRotX, -180, 180, "X");
-                drawSlider(graphics, x3 + 10, vmY + 87, 100, 4, BiwerVisualsClient.CONFIG.vmRotY, -180, 180, "Y");
-                drawSlider(graphics, x3 + 10, vmY + 97, 100, 4, BiwerVisualsClient.CONFIG.vmRotZ, -180, 180, "Z");
-
-                drawToggle(graphics, x3 + 10, vmY + 110, 15, 8, BiwerVisualsClient.CONFIG.vmScale);
-                graphics.text(this.font, "Размер", x3 + 30, vmY + 110, 0xFFAAAAAA, false);
-                drawSlider(graphics, x3 + 10, vmY + 122, 100, 4, BiwerVisualsClient.CONFIG.vmScaleX, 0, 3, "X");
-                drawSlider(graphics, x3 + 10, vmY + 132, 100, 4, BiwerVisualsClient.CONFIG.vmScaleY, 0, 3, "Y");
-                drawSlider(graphics, x3 + 10, vmY + 142, 100, 4, BiwerVisualsClient.CONFIG.vmScaleZ, 0, 3, "Z");
+                    graphics.fill(c.x + c.width - 14, c.y - 1, c.x + c.width - 4, c.y + 9, 0xFF000000 | c.color);
+                    settingsY += 14;
+                }
             }
+            moduleY = settingsY;
+            if (module.expandAnim <= 0.01f) moduleY += module.height + 2;
         }
-
-        // Entity ESP
-        int espY = vmY + (BiwerVisualsClient.CONFIG.viewmodelCollapsed ? 30 : 170);
-        graphics.text(this.font, "Entity ESP", x3 + 10, espY + 5, textColor, false);
-        drawToggle(graphics, x3 + 90, espY + 5, 20, 10, BiwerVisualsClient.CONFIG.espEnabled);
-
-        if (!BiwerVisualsClient.CONFIG.espCollapsed) {
-            graphics.fill(x3 + 5, espY + 15, x3 + colWidth - 5, espY + 70, 0xAA000000);
-            drawToggle(graphics, x3 + 10, espY + 20, 15, 8, BiwerVisualsClient.CONFIG.espPlayers);
-            graphics.text(this.font, "Игроки", x3 + 30, espY + 20, 0xFFAAAAAA, false);
-            drawToggle(graphics, x3 + 10, espY + 33, 15, 8, BiwerVisualsClient.CONFIG.espMobs);
-            graphics.text(this.font, "Мобы", x3 + 30, espY + 33, 0xFFAAAAAA, false);
-            drawToggle(graphics, x3 + 10, espY + 46, 15, 8, BiwerVisualsClient.CONFIG.espAnimals);
-            graphics.text(this.font, "Животные", x3 + 30, espY + 46, 0xFFAAAAAA, false);
-            drawToggle(graphics, x3 + 10, espY + 59, 15, 8, BiwerVisualsClient.CONFIG.espNaked);
-            graphics.text(this.font, "Без брони", x3 + 30, espY + 59, 0xFFAAAAAA, false);
-        }
-
-        // Tags
-        int tagsY = espY + (BiwerVisualsClient.CONFIG.espCollapsed ? 30 : 80);
-        graphics.text(this.font, "Tags", x3 + 10, tagsY + 5, textColor, false);
-        drawToggle(graphics, x3 + 90, tagsY + 5, 20, 10, BiwerVisualsClient.CONFIG.tagsEnabled);
-
-        if (!BiwerVisualsClient.CONFIG.tagsCollapsed) {
-            graphics.fill(x3 + 5, tagsY + 15, x3 + colWidth - 5, tagsY + 70, 0xAA000000);
-            drawToggle(graphics, x3 + 10, tagsY + 20, 15, 8, BiwerVisualsClient.CONFIG.tagsPlayers);
-            graphics.text(this.font, "Игроки", x3 + 30, tagsY + 20, 0xFFAAAAAA, false);
-            drawToggle(graphics, x3 + 10, tagsY + 33, 15, 8, BiwerVisualsClient.CONFIG.tagsMobs);
-            graphics.text(this.font, "Мобы", x3 + 30, tagsY + 33, 0xFFAAAAAA, false);
-            drawToggle(graphics, x3 + 10, tagsY + 46, 15, 8, BiwerVisualsClient.CONFIG.tagsAnimals);
-            graphics.text(this.font, "Животные", x3 + 30, tagsY + 46, 0xFFAAAAAA, false);
-        }
-
-        // JumpCircles
-        int jcY = tagsY + (BiwerVisualsClient.CONFIG.tagsCollapsed ? 30 : 80);
-        graphics.text(this.font, "JumpCircles", x3 + 10, jcY + 5, textColor, false);
-        drawToggle(graphics, x3 + 90, jcY + 5, 20, 10, BiwerVisualsClient.CONFIG.jumpCirclesEnabled);
-
-        // CustomSky
-        int skyY = jcY + 30;
-        graphics.text(this.font, "CustomSky", x3 + 10, skyY + 5, textColor, false);
-        drawToggle(graphics, x3 + 90, skyY + 5, 20, 10, BiwerVisualsClient.CONFIG.customSkyEnabled);
-
-        if (!BiwerVisualsClient.CONFIG.customSkyCollapsed) {
-            int skyPanelBottom = BiwerVisualsClient.CONFIG.auroraEnabled
-                    ? skyY + SKY_AURORA_PANEL_BOTTOM
-                    : skyY + SKY_PANEL_BOTTOM;
-            graphics.fill(x3 + 5, skyY + 15, x3 + colWidth - 5, skyPanelBottom, 0xAA000000);
-
-            drawButton(graphics, "Закат", x3 + 10, skyY + 20, 50, 12, mouseX, mouseY, BiwerVisualsClient.CONFIG.skyMode == 0, true);
-            drawButton(graphics, "Аврора", x3 + 65, skyY + 20, 50, 12, mouseX, mouseY, BiwerVisualsClient.CONFIG.skyMode == 1, true);
-            drawButton(graphics, "Космос", x3 + 10, skyY + 34, 50, 12, mouseX, mouseY, BiwerVisualsClient.CONFIG.skyMode == 2, true);
-            drawButton(graphics, "Неон", x3 + 65, skyY + 34, 50, 12, mouseX, mouseY, BiwerVisualsClient.CONFIG.skyMode == 3, true);
-            drawButton(graphics, "Перелив", x3 + 10, skyY + 48, 105, 12, mouseX, mouseY, BiwerVisualsClient.CONFIG.skyMode == 4, true);
-
-            graphics.text(this.font, "Звёзды: " + (int) BiwerVisualsClient.CONFIG.skyStars + "%", x3 + 10, skyY + 64, 0xFFAAAAAA, false);
-            drawSlider(graphics, x3 + 10, skyY + 76, 100, 4, BiwerVisualsClient.CONFIG.skyStars, 0, 100, "");
-
-            graphics.text(this.font, "Скорость: " + (int) BiwerVisualsClient.CONFIG.skySpeed + "%", x3 + 10, skyY + 89, 0xFFAAAAAA, false);
-            drawSlider(graphics, x3 + 10, skyY + 101, 100, 4, BiwerVisualsClient.CONFIG.skySpeed, 0, 100, "");
-
-            // Северное сияние
-            drawToggle(graphics, x3 + 10, skyY + SKY_AURORA_TOGGLE_Y, 15, 8, BiwerVisualsClient.CONFIG.auroraEnabled);
-            graphics.text(this.font, "Северное сияние", x3 + 30, skyY + SKY_AURORA_TOGGLE_Y,
-                    BiwerVisualsClient.CONFIG.auroraEnabled ? 0xFFFFFFFF : 0xFFAAAAAA, false);
-
-            if (BiwerVisualsClient.CONFIG.auroraEnabled) {
-                drawAuroraColorRow(graphics, "Низ", x3 + 10,
-                        skyY + SKY_AURORA_BOTTOM_LABEL_Y, skyY + SKY_AURORA_BOTTOM_SLIDER_Y,
-                        BiwerVisualsClient.CONFIG.auroraColorBottom);
-                drawAuroraColorRow(graphics, "Верх", x3 + 10,
-                        skyY + SKY_AURORA_TOP_LABEL_Y, skyY + SKY_AURORA_TOP_SLIDER_Y,
-                        BiwerVisualsClient.CONFIG.auroraColorTop);
-
-                graphics.text(this.font, "Яркость: " + (int) BiwerVisualsClient.CONFIG.auroraBrightness + "%",
-                        x3 + 10, skyY + SKY_AURORA_BRIGHT_LABEL_Y, 0xFFAAAAAA, false);
-                drawSlider(graphics, x3 + 10, skyY + SKY_AURORA_BRIGHT_SLIDER_Y, 100, 4,
-                        BiwerVisualsClient.CONFIG.auroraBrightness, 0, 100, "");
-            }
-        }
-
-        // --- Fly (Movement) ---
-        int moveX = x2;
-        int flyY = startY + 30;
-        graphics.text(this.font, "Fly", moveX + 10, flyY + 5, textColor, false);
-        drawToggle(graphics, moveX + 90, flyY + 5, 20, 10, BiwerVisualsClient.CONFIG.flyEnabled);
-
-        // Блок Sprint
-        int sprintY = flyY + 30; // Сдвигаем ниже Fly
-        graphics.text(this.font, "Sprint", x2 + 10, sprintY + 5, textColor, false);
-        drawToggle(graphics, x2 + 90, sprintY + 5, 20, 10, BiwerVisualsClient.CONFIG.sprintEnabled);
-
-        // Блок Speed
-        int speedY = sprintY + 30;
-        graphics.text(this.font, "Speed", x2 + 10, speedY + 5, textColor, false);
-        drawToggle(graphics, x2 + 90, speedY + 5, 20, 10, BiwerVisualsClient.CONFIG.speedEnabled);
-
-        if (!BiwerVisualsClient.CONFIG.speedCollapsed) {
-            graphics.fill(x2 + 5, speedY + 15, x2 + colWidth - 5, speedY + 86, 0xAA000000);
-            graphics.text(this.font, "Буст: +" + (int) BiwerVisualsClient.CONFIG.speedPercent + "%", x2 + 10, speedY + 20, 0xFFAAAAAA, false);
-            drawSlider(graphics, x2 + 10, speedY + 32, 100, 4, BiwerVisualsClient.CONFIG.speedPercent, 5, 60, "");
-            drawToggle(graphics, x2 + 10, speedY + 45, 15, 8, BiwerVisualsClient.CONFIG.speedOnlySprint);
-            graphics.text(this.font, "Только спринт", x2 + 30, speedY + 45, 0xFFAAAAAA, false);
-            drawToggle(graphics, x2 + 10, speedY + 58, 15, 8, BiwerVisualsClient.CONFIG.speedSmooth);
-            graphics.text(this.font, "Плавный разгон", x2 + 30, speedY + 58, 0xFFAAAAAA, false);
-            drawToggle(graphics, x2 + 10, speedY + 71, 15, 8, BiwerVisualsClient.CONFIG.speedSkipIfPotion);
-            graphics.text(this.font, "Без зелья", x2 + 30, speedY + 71, 0xFFAAAAAA, false);
-        }
-
-        // Блок BunnyHop
-        int bhopY = speedY + (BiwerVisualsClient.CONFIG.speedCollapsed ? 30 : 100);
-        graphics.text(this.font, "BunnyHop", x2 + 10, bhopY + 5, textColor, false);
-        drawToggle(graphics, x2 + 90, bhopY + 5, 20, 10, BiwerVisualsClient.CONFIG.bunnyHopEnabled);
-
-        if (!BiwerVisualsClient.CONFIG.bunnyHopCollapsed) {
-            graphics.fill(x2 + 5, bhopY + 15, x2 + colWidth - 5, bhopY + 72, 0xAA000000);
-            drawToggle(graphics, x2 + 10, bhopY + 20, 15, 8, BiwerVisualsClient.CONFIG.bhopAutoJump);
-            graphics.text(this.font, "Авто-прыжок", x2 + 30, bhopY + 20, 0xFFAAAAAA, false);
-            drawToggle(graphics, x2 + 10, bhopY + 33, 15, 8, BiwerVisualsClient.CONFIG.bhopOnlyWhileMoving);
-            graphics.text(this.font, "В движении", x2 + 30, bhopY + 33, 0xFFAAAAAA, false);
-            graphics.text(this.font, "Задержка: " + BiwerVisualsClient.CONFIG.bhopJumpDelay + " т.", x2 + 10, bhopY + 46, 0xFFAAAAAA, false);
-            drawSlider(graphics, x2 + 10, bhopY + 58, 100, 4, BiwerVisualsClient.CONFIG.bhopJumpDelay, 0, 20, "");
-        }
-
-        // Блок TargetStrafe
-        int strafeY = bhopY + (BiwerVisualsClient.CONFIG.bunnyHopCollapsed ? 30 : 90);
-        graphics.text(this.font, "TargetStrafe", x2 + 10, strafeY + 5, textColor, false);
-        drawToggle(graphics, x2 + 90, strafeY + 5, 20, 10, BiwerVisualsClient.CONFIG.targetStrafeEnabled);
-
-        if (!BiwerVisualsClient.CONFIG.targetStrafeCollapsed) {
-            graphics.fill(x2 + 5, strafeY + 15, x2 + colWidth - 5, strafeY + 60, 0xAA000000);
-            drawToggle(graphics, x2 + 10, strafeY + 20, 15, 8, BiwerVisualsClient.CONFIG.strafeAutoJump);
-            graphics.text(this.font, "Авто-прыжок", x2 + 30, strafeY + 20, 0xFFAAAAAA, false);
-            graphics.text(this.font, "Дистанция: " + String.format("%.1f", BiwerVisualsClient.CONFIG.strafeRange), x2 + 10, strafeY + 33, 0xFFAAAAAA, false);
-            drawSlider(graphics, x2 + 10, strafeY + 45, 100, 4, BiwerVisualsClient.CONFIG.strafeRange, 0.5f, 4.0f, "");
-        }
-
-        // --- PLAYER и MISC ---
-        int x4 = x3 + colWidth + padding;
-        graphics.fill(x4, startY, x4 + colWidth, startY + colHeight, bgColor);
-        graphics.text(this.font, "Player", x4 + 10, startY + 10, textColor, false);
-
-        // AutoTotem (колонка Player)
-        int autoTotemY = startY + 30;
-        graphics.text(this.font, "AutoTotem", x4 + 10, autoTotemY + 5, textColor, false);
-        drawToggle(graphics, x4 + 90, autoTotemY + 5, 20, 10, BiwerVisualsClient.CONFIG.autoTotemEnabled);
-
-        if (!BiwerVisualsClient.CONFIG.autoTotemCollapsed) {
-            graphics.fill(x4 + 5, autoTotemY + 15, x4 + colWidth - 5, autoTotemY + 50, 0xAA000000);
-            graphics.text(this.font, "Задержка: " + BiwerVisualsClient.CONFIG.autoTotemDelay + " т.", x4 + 10, autoTotemY + 20, 0xFFAAAAAA, false);
-            drawSlider(graphics, x4 + 10, autoTotemY + 35, 100, 4, BiwerVisualsClient.CONFIG.autoTotemDelay, 1, 20, "");
-        }
-
-        // --- VELOCITY ---
-        int velocityY = autoTotemY + (BiwerVisualsClient.CONFIG.autoTotemCollapsed ? 30 : 60);
-        graphics.text(this.font, "Velocity", x4 + 10, velocityY + 5, textColor, false);
-        drawToggle(graphics, x4 + 90, velocityY + 5, 20, 10, BiwerVisualsClient.CONFIG.velocityEnabled);
-
-        if (!BiwerVisualsClient.CONFIG.velocityCollapsed) {
-            graphics.fill(x4 + 5, velocityY + 15, x4 + colWidth - 5, velocityY + 72, 0xAA000000);
-
-            graphics.text(this.font, "Режим:", x4 + 10, velocityY + 20, 0xFFAAAAAA, false);
-            drawButton(graphics, "Обычный", x4 + 10, velocityY + 32, 50, 12, mouseX, mouseY, BiwerVisualsClient.CONFIG.velocityMode == 0, true);
-            drawButton(graphics, "Легит", x4 + 64, velocityY + 32, 46, 12, mouseX, mouseY, BiwerVisualsClient.CONFIG.velocityMode == 1, true);
-
-            graphics.text(this.font, "Сила: " + (int) BiwerVisualsClient.CONFIG.velocityPercent + "%", x4 + 10, velocityY + 46, 0xFFAAAAAA, false);
-            drawSlider(graphics, x4 + 10, velocityY + 58, 100, 4, BiwerVisualsClient.CONFIG.velocityPercent, 0.0f, 100.0f, "");
-        }
-
-        int x5 = x4 + colWidth + padding;
-        graphics.fill(x5, startY, x5 + colWidth, startY + colHeight, bgColor);
-        graphics.text(this.font, "Misc", x5 + 10, startY + 10, textColor, false);
-
-        // HUD
-        int hudY = startY + 30;
-        graphics.text(this.font, "HUD", x5 + 10, hudY + 5, textColor, false);
-        drawToggle(graphics, x5 + 90, hudY + 5, 20, 10, BiwerVisualsClient.CONFIG.hudEnabled);
-        drawButton(graphics, "Редактор HUD", x5 + 10, hudY + 24, 100, 14, mouseX, mouseY, false, true);
-
-        // FullBright (Misc)
-        int fullBrightY = hudY + 50;
-        graphics.text(this.font, "FullBright", x5 + 10, fullBrightY + 5, textColor, false);
-        drawToggle(graphics, x5 + 90, fullBrightY + 5, 20, 10, BiwerVisualsClient.CONFIG.fullBrightEnabled);
-
-        if (!BiwerVisualsClient.CONFIG.fullBrightCollapsed) {
-            graphics.fill(x5 + 5, fullBrightY + 15, x5 + colWidth - 5, fullBrightY + 70, 0xAA000000);
-
-            graphics.text(this.font, "Режим:", x5 + 10, fullBrightY + 20, 0xFFAAAAAA, false);
-            drawButton(graphics, "Гамма", x5 + 10, fullBrightY + 32, 50, 12, mouseX, mouseY, BiwerVisualsClient.CONFIG.fullBrightMode == 0, true);
-            drawButton(graphics, "Ночное", x5 + 64, fullBrightY + 32, 46, 12, mouseX, mouseY, BiwerVisualsClient.CONFIG.fullBrightMode == 1, true);
-
-            graphics.text(this.font, "Гамма: " + String.format("%.1f", BiwerVisualsClient.CONFIG.fullBrightGamma), x5 + 10, fullBrightY + 46, 0xFFAAAAAA, false);
-            drawSlider(graphics, x5 + 10, fullBrightY + 58, 100, 4, BiwerVisualsClient.CONFIG.fullBrightGamma, 1.0f, 8.0f, "");
-        }
-
-        // Crosshair (Misc)
-        int crosshairY = fullBrightY + (BiwerVisualsClient.CONFIG.fullBrightCollapsed ? 30 : 80);
-        graphics.text(this.font, "Crosshair", x5 + 10, crosshairY + 5, textColor, false);
-        drawToggle(graphics, x5 + 90, crosshairY + 5, 20, 10, BiwerVisualsClient.CONFIG.crosshairEnabled);
-
-        if (!BiwerVisualsClient.CONFIG.crosshairCollapsed) {
-            graphics.fill(x5 + 5, crosshairY + 15, x5 + colWidth - 5, crosshairY + 96, 0xAA000000);
-
-            graphics.text(this.font, "Зазор: " + String.format("%.1f", BiwerVisualsClient.CONFIG.crosshairGap), x5 + 10, crosshairY + 20, 0xFFAAAAAA, false);
-            drawSlider(graphics, x5 + 10, crosshairY + 32, 100, 4, BiwerVisualsClient.CONFIG.crosshairGap, 0.0f, 6.0f, "");
-
-            graphics.text(this.font, "Длина: " + String.format("%.1f", BiwerVisualsClient.CONFIG.crosshairLength), x5 + 10, crosshairY + 45, 0xFFAAAAAA, false);
-            drawSlider(graphics, x5 + 10, crosshairY + 57, 100, 4, BiwerVisualsClient.CONFIG.crosshairLength, 2.0f, 5.0f, "");
-
-            drawToggle(graphics, x5 + 10, crosshairY + 70, 15, 8, BiwerVisualsClient.CONFIG.crosshairOutline);
-            graphics.text(this.font, "Контур", x5 + 30, crosshairY + 70, 0xFFAAAAAA, false);
-            drawToggle(graphics, x5 + 70, crosshairY + 70, 15, 8, BiwerVisualsClient.CONFIG.crosshairCenterDot);
-            graphics.text(this.font, "Точка", x5 + 90, crosshairY + 70, 0xFFAAAAAA, false);
-
-            drawToggle(graphics, x5 + 10, crosshairY + 83, 15, 8, BiwerVisualsClient.CONFIG.crosshairAdaptive);
-            graphics.text(this.font, "Адаптив", x5 + 30, crosshairY + 83, 0xFFAAAAAA, false);
-        }
-
-        // SwingAnimation (Misc)
-        int swingY = crosshairY + (BiwerVisualsClient.CONFIG.crosshairCollapsed ? 30 : 106);
-        graphics.text(this.font, "SwingAnimation", x5 + 10, swingY + 5, textColor, false);
-        drawToggle(graphics, x5 + 90, swingY + 5, 20, 10, BiwerVisualsClient.CONFIG.swingAnimationEnabled);
-
-        if (!BiwerVisualsClient.CONFIG.swingAnimationCollapsed) {
-            graphics.fill(x5 + 5, swingY + 15, x5 + colWidth - 5, swingY + 120, 0xAA000000);
-
-            graphics.text(this.font, "Мод:", x5 + 10, swingY + 20, 0xFFAAAAAA, false);
-            for (int i = 0; i < 5; i++) {
-                drawButton(graphics, "М" + (i + 1), x5 + 10 + i * 20, swingY + 32, 18, 12, mouseX, mouseY,
-                        BiwerVisualsClient.CONFIG.swingAnimationMode == i, true);
-            }
-
-            graphics.text(this.font, "Угол: " + (int) BiwerVisualsClient.CONFIG.swingAngle, x5 + 10, swingY + 46, 0xFFAAAAAA, false);
-            drawSlider(graphics, x5 + 10, swingY + 58, 100, 4, BiwerVisualsClient.CONFIG.swingAngle, 0.0f, 360.0f, "");
-
-            graphics.text(this.font, "Наклон: " + (int) BiwerVisualsClient.CONFIG.swingTipTilt, x5 + 10, swingY + 71, 0xFFAAAAAA, false);
-            drawSlider(graphics, x5 + 10, swingY + 83, 100, 4, BiwerVisualsClient.CONFIG.swingTipTilt, -90.0f, 90.0f, "");
-
-            graphics.text(this.font, "Сила: " + (int) BiwerVisualsClient.CONFIG.swingPower, x5 + 10, swingY + 96, 0xFFAAAAAA, false);
-            drawSlider(graphics, x5 + 10, swingY + 108, 100, 4, BiwerVisualsClient.CONFIG.swingPower, 1.0f, 10.0f, "");
-        }
-
-        // SeeInvisibles (Misc)
-        int seeY = swingY + (BiwerVisualsClient.CONFIG.swingAnimationCollapsed ? 30 : 130);
-        graphics.text(this.font, "SeeInvisibles", x5 + 10, seeY + 5, textColor, false);
-        drawToggle(graphics, x5 + 90, seeY + 5, 20, 10, BiwerVisualsClient.CONFIG.seeInvisiblesEnabled);
-
-        graphics.text(this.font, "X", this.width - 20, 10, 0xFFFF5555, false);
     }
 
-    private void drawButton(GuiGraphicsExtractor graphics, String text, int x, int y, int width, int height, int mouseX, int mouseY, boolean isActive, boolean isEnabled) {
-        boolean hovered = mouseX >= x && mouseX <= x + width && mouseY >= y && mouseY <= y + height;
-        int color = !isEnabled ? disabledColor : (isActive ? activeColor : (hovered ? 0xFF4A4A6A : inactiveColor));
-        graphics.fill(x, y, x + width, y + height, color);
-        graphics.text(this.font, text, x + (width / 2) - (this.font.width(text) / 2), y + 2, isEnabled ? textColor : 0xFF777777, false);
-    }
-
-    private void drawToggle(GuiGraphicsExtractor graphics, int x, int y, int width, int height, boolean state) {
-        int bg = state ? 0xFF5A3A8A : 0xFF2A2A40;
-        graphics.fill(x, y, x + width, y + height, bg);
-        int circleSize = height - 2;
-        int circleX = state ? (x + width - circleSize - 1) : (x + 1);
-        graphics.fill(circleX, y + 1, circleX + circleSize, y + height - 1, 0xFFFFFFFF);
-    }
-
-    private void drawSlider(GuiGraphicsExtractor graphics, int x, int y, int width, int height, float value, float min, float max, String label) {
-        if (!label.isEmpty()) graphics.text(this.font, label, x - 10, y - 2, 0xFFAAAAAA, false);
-        graphics.fill(x, y, x + width, y + height, 0xFF333333);
-        int filled = (int) ((value - min) / (max - min) * width);
-        graphics.fill(x, y, x + filled, y + height, activeColor);
-        graphics.fill(x + filled - 1, y - 2, x + filled + 1, y + height + 2, 0xFFFFFFFF);
-    }
-
-    private void drawColorSlider(GuiGraphicsExtractor graphics, int x, int y, int width, int height, int value, int channelColor) {
-        graphics.fill(x, y, x + width, y + height, 0xFF333333);
-        int filled = Math.round(Math.max(0, Math.min(255, value)) / 255.0f * width);
-        graphics.fill(x, y, x + filled, y + height, channelColor);
-        graphics.fill(x + filled - 1, y - 2, x + filled + 1, y + height + 2, 0xFFFFFFFF);
-    }
-
-    private void drawAuroraColorRow(GuiGraphicsExtractor graphics, String title, int x, int labelY, int sliderY, int color) {
-        graphics.text(this.font, title, x, labelY, 0xFFAAAAAA, false);
-        graphics.fill(x + 26, labelY - 1, x + 46, labelY + 7, 0xFF000000 | (color & 0xFFFFFF));
-        graphics.text(this.font, hexColor(color), x + 50, labelY, 0xFFAAAAAA, false);
-
-        drawColorSlider(graphics, x, sliderY, 30, 4, (color >> 16) & 0xFF, 0xFFFF5555);
-        drawColorSlider(graphics, x + 35, sliderY, 30, 4, (color >> 8) & 0xFF, 0xFF55FF55);
-        drawColorSlider(graphics, x + 70, sliderY, 30, 4, color & 0xFF, 0xFF5599FF);
-    }
-
-    private static String hexColor(int rgb) {
-        return String.format("#%06X", rgb & 0xFFFFFF);
-    }
-
-    private static int channelValue(double mouseX, int sliderX, int width) {
-        double k = (mouseX - sliderX) / (double) width;
-        return (int) Math.round(Math.max(0.0, Math.min(1.0, k)) * 255.0);
-    }
-
-    private static int withChannel(int rgb, int shift, int value) {
-        int mask = 0xFF << shift;
-        return (rgb & ~mask) | ((value & 0xFF) << shift);
+    private void drawRoundedRect(GuiGraphicsExtractor graphics, int x, int y, int w, int h, int r, int color) {
+        graphics.fill(x + r, y, x + w - r, y + h, color);
+        graphics.fill(x, y + r, x + w, y + h - r, color);
+        graphics.fill(x + 1, y + 1, x + r, y + r, color);
+        graphics.fill(x + w - r, y + 1, x + w - 1, y + r, color);
+        graphics.fill(x + 1, y + h - r, x + r, y + h - 1, color);
+        graphics.fill(x + w - r, y + h - r, x + w - 1, y + h - 1, color);
     }
 
     @Override
-    public boolean mouseClicked(net.minecraft.client.input.MouseButtonEvent click, boolean doubled) {
-        double mouseX = click.x();
-        double mouseY = click.y();
+    public boolean mouseClicked(MouseButtonEvent click, boolean doubled) {
+        double mouseX = click.x(), mouseY = click.y();
         int button = click.button();
 
-        int colWidth = 120;
-        int padding = 5;
-        int totalWidth = (colWidth * 5) + (padding * 4);
-        int startX = (this.width - totalWidth) / 2;
-        int startY = 20;
-
-        // --- Координаты для всех колонок ---
-        int x1 = startX;
-        int combatY = startY + 30;
-
-        int x2 = startX + colWidth + padding; // Movement
-        int flyY = startY + 30; // Fly
-        int sprintY = flyY + 30; // Sprint (сдвиг на 30 пикселей ниже Fly)
-
-        int x3 = startX + (colWidth + padding) * 2; // Render
-        int ambY = startY + 30;
-        int vmY = ambY + (BiwerVisualsClient.CONFIG.ambienceCollapsed ? 30 : 150);
-        int espY = vmY + (BiwerVisualsClient.CONFIG.viewmodelCollapsed ? 30 : 170);
-        int tagsY = espY + (BiwerVisualsClient.CONFIG.espCollapsed ? 30 : 80);
-        int x4 = startX + (colWidth + padding) * 3; // Player
-        int autoTotemY = startY + 30;
-
-        if (button == 1) { // Сворачивание
-            if (isHovered(mouseX, mouseY, x1 + 5, combatY, colWidth - 10, 15)) { BiwerVisualsClient.CONFIG.killAuraCollapsed = !BiwerVisualsClient.CONFIG.killAuraCollapsed; return true; }
-            int auraHitY = combatY + (BiwerVisualsClient.CONFIG.killAuraCollapsed ? 30 : 310);
-            if (isHovered(mouseX, mouseY, x1 + 5, auraHitY, colWidth - 10, 15)) { BiwerVisualsClient.CONFIG.auraCollapsed = !BiwerVisualsClient.CONFIG.auraCollapsed; return true; }
-            int triggerHitY = auraHitY + (BiwerVisualsClient.CONFIG.auraCollapsed ? 30 : 260);
-            if (isHovered(mouseX, mouseY, x1 + 5, triggerHitY, colWidth - 10, 15)) { BiwerVisualsClient.CONFIG.triggerBotCollapsed = !BiwerVisualsClient.CONFIG.triggerBotCollapsed; return true; }
-            int assistHitY = triggerHitY + (BiwerVisualsClient.CONFIG.triggerBotCollapsed ? 30 : 106);
-            if (isHovered(mouseX, mouseY, x1 + 5, assistHitY, colWidth - 10, 15)) { BiwerVisualsClient.CONFIG.aimAssistCollapsed = !BiwerVisualsClient.CONFIG.aimAssistCollapsed; return true; }
-            if (isHovered(mouseX, mouseY, x3 + 5, ambY, colWidth - 10, 15)) { BiwerVisualsClient.CONFIG.ambienceCollapsed = !BiwerVisualsClient.CONFIG.ambienceCollapsed; return true; }
-            if (isHovered(mouseX, mouseY, x3 + 5, vmY, colWidth - 10, 15)) { BiwerVisualsClient.CONFIG.viewmodelCollapsed = !BiwerVisualsClient.CONFIG.viewmodelCollapsed; return true; }
-            if (isHovered(mouseX, mouseY, x3 + 5, espY, colWidth - 10, 15)) { BiwerVisualsClient.CONFIG.espCollapsed = !BiwerVisualsClient.CONFIG.espCollapsed; return true; }
-            if (isHovered(mouseX, mouseY, x3 + 5, tagsY, colWidth - 10, 15)) { BiwerVisualsClient.CONFIG.tagsCollapsed = !BiwerVisualsClient.CONFIG.tagsCollapsed; return true; }
-            int speedHitY = flyY + 60;
-            int bhopHitY = speedHitY + (BiwerVisualsClient.CONFIG.speedCollapsed ? 30 : 100);
-            int strafeHitY = bhopHitY + (BiwerVisualsClient.CONFIG.bunnyHopCollapsed ? 30 : 90);
-            if (isHovered(mouseX, mouseY, x2 + 5, speedHitY, colWidth - 10, 15)) { BiwerVisualsClient.CONFIG.speedCollapsed = !BiwerVisualsClient.CONFIG.speedCollapsed; return true; }
-            if (isHovered(mouseX, mouseY, x2 + 5, bhopHitY, colWidth - 10, 15)) { BiwerVisualsClient.CONFIG.bunnyHopCollapsed = !BiwerVisualsClient.CONFIG.bunnyHopCollapsed; return true; }
-            if (isHovered(mouseX, mouseY, x2 + 5, strafeHitY, colWidth - 10, 15)) { BiwerVisualsClient.CONFIG.targetStrafeCollapsed = !BiwerVisualsClient.CONFIG.targetStrafeCollapsed; return true; }
-            int skyHitY = tagsY + (BiwerVisualsClient.CONFIG.tagsCollapsed ? 30 : 80) + 30;
-            if (isHovered(mouseX, mouseY, x3 + 5, skyHitY, colWidth - 10, 15)) { BiwerVisualsClient.CONFIG.customSkyCollapsed = !BiwerVisualsClient.CONFIG.customSkyCollapsed; return true; }
-            if (isHovered(mouseX, mouseY, x4 + 5, autoTotemY, colWidth - 10, 15)) { BiwerVisualsClient.CONFIG.autoTotemCollapsed = !BiwerVisualsClient.CONFIG.autoTotemCollapsed; return true; }
-            int velocityHitY = autoTotemY + (BiwerVisualsClient.CONFIG.autoTotemCollapsed ? 30 : 60);
-            if (isHovered(mouseX, mouseY, x4 + 5, velocityHitY, colWidth - 10, 15)) { BiwerVisualsClient.CONFIG.velocityCollapsed = !BiwerVisualsClient.CONFIG.velocityCollapsed; return true; }
-            int miscHitX = startX + (colWidth + padding) * 4;
-            int miscHudY = startY + 30;
-            int fullBrightHitY = miscHudY + 50;
-            if (isHovered(mouseX, mouseY, miscHitX + 5, fullBrightHitY, colWidth - 10, 15)) { BiwerVisualsClient.CONFIG.fullBrightCollapsed = !BiwerVisualsClient.CONFIG.fullBrightCollapsed; return true; }
-            int crosshairHitY = fullBrightHitY + (BiwerVisualsClient.CONFIG.fullBrightCollapsed ? 30 : 80);
-            if (isHovered(mouseX, mouseY, miscHitX + 5, crosshairHitY, colWidth - 10, 15)) { BiwerVisualsClient.CONFIG.crosshairCollapsed = !BiwerVisualsClient.CONFIG.crosshairCollapsed; return true; }
-            int swingHitY = crosshairHitY + (BiwerVisualsClient.CONFIG.crosshairCollapsed ? 30 : 106);
-            if (isHovered(mouseX, mouseY, miscHitX + 5, swingHitY, colWidth - 10, 15)) { BiwerVisualsClient.CONFIG.swingAnimationCollapsed = !BiwerVisualsClient.CONFIG.swingAnimationCollapsed; return true; }
-        }
-
-        if (button == 0) { // Левый клик
-            // KillAura
-            if (isHovered(mouseX, mouseY, x1 + 90, combatY + 5, 20, 10)) { BiwerVisualsClient.CONFIG.killAuraEnabled = !BiwerVisualsClient.CONFIG.killAuraEnabled; return true; }
-            if (!BiwerVisualsClient.CONFIG.killAuraCollapsed) {
-                if (isHovered(mouseX, mouseY, x1 + 10, combatY + 32, 100, 4)) { BiwerVisualsClient.CONFIG.killAuraRange = (float) ((mouseX - (x1 + 10)) / 100.0 * 5 + 1); return true; }
-                if (isHovered(mouseX, mouseY, x1 + 10, combatY + 57, 35, 12)) { BiwerVisualsClient.CONFIG.aimMode = 0; return true; }
-                if (isHovered(mouseX, mouseY, x1 + 48, combatY + 57, 35, 12)) { BiwerVisualsClient.CONFIG.aimMode = 1; return true; }
-                if (isHovered(mouseX, mouseY, x1 + 86, combatY + 57, 25, 12)) { BiwerVisualsClient.CONFIG.aimMode = 2; return true; }
-                if (isHovered(mouseX, mouseY, x1 + 10, combatY + 75, 15, 8)) { BiwerVisualsClient.CONFIG.onlyCriticals = !BiwerVisualsClient.CONFIG.onlyCriticals; return true; }
-                if (isHovered(mouseX, mouseY, x1 + 10, combatY + 88, 15, 8)) { BiwerVisualsClient.CONFIG.adaptiveHits = !BiwerVisualsClient.CONFIG.adaptiveHits; return true; }
-                if (isHovered(mouseX, mouseY, x1 + 10, combatY + 101, 15, 8)) { BiwerVisualsClient.CONFIG.shieldBreaker = !BiwerVisualsClient.CONFIG.shieldBreaker; return true; }
-                if (isHovered(mouseX, mouseY, x1 + 10, combatY + 114, 15, 8)) { BiwerVisualsClient.CONFIG.smartSprint = !BiwerVisualsClient.CONFIG.smartSprint; return true; }
-                if (isHovered(mouseX, mouseY, x1 + 10, combatY + 142, 50, 12)) { BiwerVisualsClient.CONFIG.targetPlayers = !BiwerVisualsClient.CONFIG.targetPlayers; return true; }
-                if (isHovered(mouseX, mouseY, x1 + 65, combatY + 142, 50, 12)) { BiwerVisualsClient.CONFIG.targetMobs = !BiwerVisualsClient.CONFIG.targetMobs; return true; }
-                if (isHovered(mouseX, mouseY, x1 + 10, combatY + 156, 50, 12)) { BiwerVisualsClient.CONFIG.targetAnimals = !BiwerVisualsClient.CONFIG.targetAnimals; return true; }
-                if (isHovered(mouseX, mouseY, x1 + 65, combatY + 156, 50, 12)) { BiwerVisualsClient.CONFIG.targetNaked = !BiwerVisualsClient.CONFIG.targetNaked; return true; }
-                if (isHovered(mouseX, mouseY, x1 + 10, combatY + 184, 15, 8)) { BiwerVisualsClient.CONFIG.dontHitItemUse = !BiwerVisualsClient.CONFIG.dontHitItemUse; return true; }
-                if (isHovered(mouseX, mouseY, x1 + 10, combatY + 197, 15, 8)) { BiwerVisualsClient.CONFIG.dontHitContainer = !BiwerVisualsClient.CONFIG.dontHitContainer; return true; }
-                if (isHovered(mouseX, mouseY, x1 + 10, combatY + 237, 100, 4)) { BiwerVisualsClient.CONFIG.killAuraSmooth = (float) (5 + (mouseX - (x1 + 10)) / 100.0 * 95); return true; }
-                if (isHovered(mouseX, mouseY, x1 + 10, combatY + 262, 100, 4)) { BiwerVisualsClient.CONFIG.killAuraSpeed = (float) (1 + (mouseX - (x1 + 10)) / 100.0 * 29); return true; }
-                if (isHovered(mouseX, mouseY, x1 + 10, combatY + 287, 100, 4)) { BiwerVisualsClient.CONFIG.killAuraFov = (float) (30 + (mouseX - (x1 + 10)) / 100.0 * 150); return true; }
-            }
-
-            // Aura (порт)
-            int auraY = combatY + (BiwerVisualsClient.CONFIG.killAuraCollapsed ? 30 : 310);
-            if (isHovered(mouseX, mouseY, x1 + 90, auraY + 5, 20, 10)) { BiwerVisualsClient.CONFIG.auraEnabled = !BiwerVisualsClient.CONFIG.auraEnabled; return true; }
-            if (!BiwerVisualsClient.CONFIG.auraCollapsed) {
-                if (isHovered(mouseX, mouseY, x1 + 10, auraY + 32, 100, 4)) { BiwerVisualsClient.CONFIG.auraRange = (float) (0.1 + (mouseX - (x1 + 10)) / 100.0 * 5.9); return true; }
-                if (isHovered(mouseX, mouseY, x1 + 10, auraY + 57, 100, 4)) { BiwerVisualsClient.CONFIG.auraExtraRange = (float) ((mouseX - (x1 + 10)) / 100.0 * 3.0); return true; }
-
-                if (isHovered(mouseX, mouseY, x1 + 10, auraY + 82, 42, 12)) { BiwerVisualsClient.CONFIG.auraAimMode = 0; return true; }
-                if (isHovered(mouseX, mouseY, x1 + 55, auraY + 82, 27, 12)) { BiwerVisualsClient.CONFIG.auraAimMode = 1; return true; }
-                if (isHovered(mouseX, mouseY, x1 + 85, auraY + 82, 30, 12)) { BiwerVisualsClient.CONFIG.auraAimMode = 2; return true; }
-
-                if (isHovered(mouseX, mouseY, x1 + 10, auraY + 110, 42, 12)) { BiwerVisualsClient.CONFIG.auraPriority = 0; return true; }
-                if (isHovered(mouseX, mouseY, x1 + 56, auraY + 110, 28, 12)) { BiwerVisualsClient.CONFIG.auraPriority = 1; return true; }
-                if (isHovered(mouseX, mouseY, x1 + 88, auraY + 110, 26, 12)) { BiwerVisualsClient.CONFIG.auraPriority = 2; return true; }
-
-                if (isHovered(mouseX, mouseY, x1 + 10, auraY + 126, 15, 8)) { BiwerVisualsClient.CONFIG.auraPlayers = !BiwerVisualsClient.CONFIG.auraPlayers; return true; }
-                if (isHovered(mouseX, mouseY, x1 + 70, auraY + 126, 15, 8)) { BiwerVisualsClient.CONFIG.auraMobs = !BiwerVisualsClient.CONFIG.auraMobs; return true; }
-                if (isHovered(mouseX, mouseY, x1 + 10, auraY + 139, 15, 8)) { BiwerVisualsClient.CONFIG.auraAnimals = !BiwerVisualsClient.CONFIG.auraAnimals; return true; }
-
-                if (isHovered(mouseX, mouseY, x1 + 10, auraY + 152, 15, 8)) { BiwerVisualsClient.CONFIG.auraOnlyCriticals = !BiwerVisualsClient.CONFIG.auraOnlyCriticals; return true; }
-                if (isHovered(mouseX, mouseY, x1 + 66, auraY + 152, 15, 8)) { BiwerVisualsClient.CONFIG.auraAdaptiveHits = !BiwerVisualsClient.CONFIG.auraAdaptiveHits; return true; }
-
-                if (isHovered(mouseX, mouseY, x1 + 10, auraY + 165, 15, 8)) { BiwerVisualsClient.CONFIG.auraShieldBreaker = !BiwerVisualsClient.CONFIG.auraShieldBreaker; return true; }
-                if (isHovered(mouseX, mouseY, x1 + 70, auraY + 165, 15, 8)) { BiwerVisualsClient.CONFIG.auraSmartSprint = !BiwerVisualsClient.CONFIG.auraSmartSprint; return true; }
-
-                if (isHovered(mouseX, mouseY, x1 + 10, auraY + 178, 15, 8)) { BiwerVisualsClient.CONFIG.auraDontHitItemUse = !BiwerVisualsClient.CONFIG.auraDontHitItemUse; return true; }
-                if (isHovered(mouseX, mouseY, x1 + 70, auraY + 178, 15, 8)) { BiwerVisualsClient.CONFIG.auraDontHitContainer = !BiwerVisualsClient.CONFIG.auraDontHitContainer; return true; }
-
-                if (isHovered(mouseX, mouseY, x1 + 10, auraY + 191, 15, 8)) { BiwerVisualsClient.CONFIG.auraDontHitThroughWalls = !BiwerVisualsClient.CONFIG.auraDontHitThroughWalls; return true; }
-
-                if (isHovered(mouseX, mouseY, x1 + 10, auraY + 216, 100, 4)) { BiwerVisualsClient.CONFIG.auraSpeed = (float) (1 + (mouseX - (x1 + 10)) / 100.0 * 29); return true; }
-                if (isHovered(mouseX, mouseY, x1 + 10, auraY + 241, 100, 4)) { BiwerVisualsClient.CONFIG.auraSmooth = (float) (5 + (mouseX - (x1 + 10)) / 100.0 * 95); return true; }
-            }
-
-            // TriggerBot
-            int triggerY = auraY + (BiwerVisualsClient.CONFIG.auraCollapsed ? 30 : 260);
-            if (isHovered(mouseX, mouseY, x1 + 90, triggerY + 5, 20, 10)) { BiwerVisualsClient.CONFIG.triggerBotEnabled = !BiwerVisualsClient.CONFIG.triggerBotEnabled; return true; }
-            if (!BiwerVisualsClient.CONFIG.triggerBotCollapsed) {
-                if (isHovered(mouseX, mouseY, x1 + 10, triggerY + 32, 100, 4)) { BiwerVisualsClient.CONFIG.triggerBotRange = (float) (0.5 + (mouseX - (x1 + 10)) / 100.0 * 4.5); return true; }
-                if (isHovered(mouseX, mouseY, x1 + 10, triggerY + 45, 15, 8)) { BiwerVisualsClient.CONFIG.triggerBotWeaponOnly = !BiwerVisualsClient.CONFIG.triggerBotWeaponOnly; return true; }
-                if (isHovered(mouseX, mouseY, x1 + 10, triggerY + 58, 15, 8)) { BiwerVisualsClient.CONFIG.triggerBotOnlyCriticals = !BiwerVisualsClient.CONFIG.triggerBotOnlyCriticals; return true; }
-                if (isHovered(mouseX, mouseY, x1 + 70, triggerY + 58, 15, 8)) { BiwerVisualsClient.CONFIG.triggerBotDontHitThroughWalls = !BiwerVisualsClient.CONFIG.triggerBotDontHitThroughWalls; return true; }
-                if (isHovered(mouseX, mouseY, x1 + 10, triggerY + 71, 15, 8)) { BiwerVisualsClient.CONFIG.triggerBotPlayers = !BiwerVisualsClient.CONFIG.triggerBotPlayers; return true; }
-                if (isHovered(mouseX, mouseY, x1 + 70, triggerY + 71, 15, 8)) { BiwerVisualsClient.CONFIG.triggerBotMobs = !BiwerVisualsClient.CONFIG.triggerBotMobs; return true; }
-                if (isHovered(mouseX, mouseY, x1 + 10, triggerY + 84, 15, 8)) { BiwerVisualsClient.CONFIG.triggerBotAnimals = !BiwerVisualsClient.CONFIG.triggerBotAnimals; return true; }
-            }
-
-            // AimAssistant
-            int assistY = triggerY + (BiwerVisualsClient.CONFIG.triggerBotCollapsed ? 30 : 106);
-            if (isHovered(mouseX, mouseY, x1 + 90, assistY + 5, 20, 10)) { BiwerVisualsClient.CONFIG.aimAssistEnabled = !BiwerVisualsClient.CONFIG.aimAssistEnabled; return true; }
-            if (!BiwerVisualsClient.CONFIG.aimAssistCollapsed) {
-                if (isHovered(mouseX, mouseY, x1 + 10, assistY + 32, 100, 4)) { BiwerVisualsClient.CONFIG.aimAssistStrength = (float) (5 + (mouseX - (x1 + 10)) / 100.0 * 95); return true; }
-                if (isHovered(mouseX, mouseY, x1 + 10, assistY + 45, 15, 8)) { BiwerVisualsClient.CONFIG.aimAssistWeaponOnly = !BiwerVisualsClient.CONFIG.aimAssistWeaponOnly; return true; }
-                if (isHovered(mouseX, mouseY, x1 + 10, assistY + 58, 15, 8)) { BiwerVisualsClient.CONFIG.aimAssistThroughWalls = !BiwerVisualsClient.CONFIG.aimAssistThroughWalls; return true; }
-                if (isHovered(mouseX, mouseY, x1 + 10, assistY + 71, 15, 8)) { BiwerVisualsClient.CONFIG.aimAssistPlayers = !BiwerVisualsClient.CONFIG.aimAssistPlayers; return true; }
-                if (isHovered(mouseX, mouseY, x1 + 70, assistY + 71, 15, 8)) { BiwerVisualsClient.CONFIG.aimAssistMobs = !BiwerVisualsClient.CONFIG.aimAssistMobs; return true; }
-                if (isHovered(mouseX, mouseY, x1 + 10, assistY + 84, 15, 8)) { BiwerVisualsClient.CONFIG.aimAssistAnimals = !BiwerVisualsClient.CONFIG.aimAssistAnimals; return true; }
-            }
-
-            // Ambience
-            if (isHovered(mouseX, mouseY, x3 + 90, ambY + 5, 20, 10)) { BiwerVisualsClient.CONFIG.ambienceEnabled = !BiwerVisualsClient.CONFIG.ambienceEnabled; return true; }
-            if (!BiwerVisualsClient.CONFIG.ambienceCollapsed && BiwerVisualsClient.CONFIG.ambienceEnabled) {
-                if (isHovered(mouseX, mouseY, x3 + 10, ambY + 40, 50, 15)) { BiwerVisualsClient.CONFIG.activeTimeButton = 1; return true; }
-                if (isHovered(mouseX, mouseY, x3 + 65, ambY + 40, 50, 15)) { BiwerVisualsClient.CONFIG.activeTimeButton = 2; return true; }
-                if (isHovered(mouseX, mouseY, x3 + 10, ambY + 60, 50, 15)) { BiwerVisualsClient.CONFIG.activeTimeButton = 3; return true; }
-                if (isHovered(mouseX, mouseY, x3 + 65, ambY + 60, 50, 15)) { BiwerVisualsClient.CONFIG.activeTimeButton = 4; return true; }
-                if (isHovered(mouseX, mouseY, x3 + 10, ambY + 100, 50, 15)) { BiwerVisualsClient.CONFIG.activeWeatherButton = 1; return true; }
-                if (isHovered(mouseX, mouseY, x3 + 65, ambY + 100, 50, 15)) { BiwerVisualsClient.CONFIG.activeWeatherButton = 2; return true; }
-                if (isHovered(mouseX, mouseY, x3 + 10, ambY + 120, 105, 15)) { BiwerVisualsClient.CONFIG.activeWeatherButton = 3; return true; }
-            }
-
-            // Viewmodel
-            if (isHovered(mouseX, mouseY, x3 + 90, vmY + 5, 20, 10)) { BiwerVisualsClient.CONFIG.viewmodelEnabled = !BiwerVisualsClient.CONFIG.viewmodelEnabled; return true; }
-            if (!BiwerVisualsClient.CONFIG.viewmodelCollapsed && BiwerVisualsClient.CONFIG.viewmodelEnabled) {
-                if (isHovered(mouseX, mouseY, x3 + 10, vmY + 20, 15, 8)) { BiwerVisualsClient.CONFIG.vmPos = !BiwerVisualsClient.CONFIG.vmPos; return true; }
-                if (isHovered(mouseX, mouseY, x3 + 10, vmY + 65, 15, 8)) { BiwerVisualsClient.CONFIG.vmRot = !BiwerVisualsClient.CONFIG.vmRot; return true; }
-                if (isHovered(mouseX, mouseY, x3 + 10, vmY + 110, 15, 8)) { BiwerVisualsClient.CONFIG.vmScale = !BiwerVisualsClient.CONFIG.vmScale; return true; }
-                if (isHovered(mouseX, mouseY, x3 + 10, vmY + 32, 100, 4)) { BiwerVisualsClient.CONFIG.vmPosX = (float) ((mouseX - (x3 + 10)) / 100.0 * 4 - 2); return true; }
-                if (isHovered(mouseX, mouseY, x3 + 10, vmY + 42, 100, 4)) { BiwerVisualsClient.CONFIG.vmPosY = (float) ((mouseX - (x3 + 10)) / 100.0 * 4 - 2); return true; }
-                if (isHovered(mouseX, mouseY, x3 + 10, vmY + 52, 100, 4)) { BiwerVisualsClient.CONFIG.vmPosZ = (float) ((mouseX - (x3 + 10)) / 100.0 * 4 - 2); return true; }
-                if (isHovered(mouseX, mouseY, x3 + 10, vmY + 77, 100, 4)) { BiwerVisualsClient.CONFIG.vmRotX = (float) ((mouseX - (x3 + 10)) / 100.0 * 360 - 180); return true; }
-                if (isHovered(mouseX, mouseY, x3 + 10, vmY + 87, 100, 4)) { BiwerVisualsClient.CONFIG.vmRotY = (float) ((mouseX - (x3 + 10)) / 100.0 * 360 - 180); return true; }
-                if (isHovered(mouseX, mouseY, x3 + 10, vmY + 97, 100, 4)) { BiwerVisualsClient.CONFIG.vmRotZ = (float) ((mouseX - (x3 + 10)) / 100.0 * 360 - 180); return true; }
-                if (isHovered(mouseX, mouseY, x3 + 10, vmY + 122, 100, 4)) { BiwerVisualsClient.CONFIG.vmScaleX = (float) ((mouseX - (x3 + 10)) / 100.0 * 3); return true; }
-                if (isHovered(mouseX, mouseY, x3 + 10, vmY + 132, 100, 4)) { BiwerVisualsClient.CONFIG.vmScaleY = (float) ((mouseX - (x3 + 10)) / 100.0 * 3); return true; }
-                if (isHovered(mouseX, mouseY, x3 + 10, vmY + 142, 100, 4)) { BiwerVisualsClient.CONFIG.vmScaleZ = (float) ((mouseX - (x3 + 10)) / 100.0 * 3); return true; }
-            }
-
-            // Entity ESP
-            if (isHovered(mouseX, mouseY, x3 + 90, espY + 5, 20, 10)) { BiwerVisualsClient.CONFIG.espEnabled = !BiwerVisualsClient.CONFIG.espEnabled; return true; }
-            if (!BiwerVisualsClient.CONFIG.espCollapsed && BiwerVisualsClient.CONFIG.espEnabled) {
-                if (isHovered(mouseX, mouseY, x3 + 10, espY + 20, 15, 8)) { BiwerVisualsClient.CONFIG.espPlayers = !BiwerVisualsClient.CONFIG.espPlayers; return true; }
-                if (isHovered(mouseX, mouseY, x3 + 10, espY + 33, 15, 8)) { BiwerVisualsClient.CONFIG.espMobs = !BiwerVisualsClient.CONFIG.espMobs; return true; }
-                if (isHovered(mouseX, mouseY, x3 + 10, espY + 46, 15, 8)) { BiwerVisualsClient.CONFIG.espAnimals = !BiwerVisualsClient.CONFIG.espAnimals; return true; }
-                if (isHovered(mouseX, mouseY, x3 + 10, espY + 59, 15, 8)) { BiwerVisualsClient.CONFIG.espNaked = !BiwerVisualsClient.CONFIG.espNaked; return true; }
-            }
-
-            // Tags
-            if (isHovered(mouseX, mouseY, x3 + 90, tagsY + 5, 20, 10)) { BiwerVisualsClient.CONFIG.tagsEnabled = !BiwerVisualsClient.CONFIG.tagsEnabled; return true; }
-            if (!BiwerVisualsClient.CONFIG.tagsCollapsed && BiwerVisualsClient.CONFIG.tagsEnabled) {
-                if (isHovered(mouseX, mouseY, x3 + 10, tagsY + 20, 15, 8)) { BiwerVisualsClient.CONFIG.tagsPlayers = !BiwerVisualsClient.CONFIG.tagsPlayers; return true; }
-                if (isHovered(mouseX, mouseY, x3 + 10, tagsY + 33, 15, 8)) { BiwerVisualsClient.CONFIG.tagsMobs = !BiwerVisualsClient.CONFIG.tagsMobs; return true; }
-                if (isHovered(mouseX, mouseY, x3 + 10, tagsY + 46, 15, 8)) { BiwerVisualsClient.CONFIG.tagsAnimals = !BiwerVisualsClient.CONFIG.tagsAnimals; return true; }
-            }
-
-            // JumpCircles
-            int jcY = tagsY + (BiwerVisualsClient.CONFIG.tagsCollapsed ? 30 : 80);
-            if (isHovered(mouseX, mouseY, x3 + 90, jcY + 5, 20, 10)) {
-                BiwerVisualsClient.CONFIG.jumpCirclesEnabled = !BiwerVisualsClient.CONFIG.jumpCirclesEnabled;
-                return true;
-            }
-
-            // CustomSky
-            int skyY = jcY + 30;
-            if (isHovered(mouseX, mouseY, x3 + 90, skyY + 5, 20, 10)) {
-                BiwerVisualsClient.CONFIG.customSkyEnabled = !BiwerVisualsClient.CONFIG.customSkyEnabled;
-                return true;
-            }
-            if (!BiwerVisualsClient.CONFIG.customSkyCollapsed) {
-                if (isHovered(mouseX, mouseY, x3 + 10, skyY + 20, 50, 12)) { BiwerVisualsClient.CONFIG.skyMode = 0; return true; }
-                if (isHovered(mouseX, mouseY, x3 + 65, skyY + 20, 50, 12)) { BiwerVisualsClient.CONFIG.skyMode = 1; return true; }
-                if (isHovered(mouseX, mouseY, x3 + 10, skyY + 34, 50, 12)) { BiwerVisualsClient.CONFIG.skyMode = 2; return true; }
-                if (isHovered(mouseX, mouseY, x3 + 65, skyY + 34, 50, 12)) { BiwerVisualsClient.CONFIG.skyMode = 3; return true; }
-                if (isHovered(mouseX, mouseY, x3 + 10, skyY + 48, 105, 12)) { BiwerVisualsClient.CONFIG.skyMode = 4; return true; }
-                if (isHovered(mouseX, mouseY, x3 + 10, skyY + 76, 100, 4)) {
-                    BiwerVisualsClient.CONFIG.skyStars = (float) Math.max(0, Math.min(100, (mouseX - (x3 + 10))));
-                    return true;
+        for (Category cat : categories) {
+            for (ModuleEntry module : cat.modules) {
+                if (mouseX >= module.x && mouseX <= module.x + module.width && mouseY >= module.y && mouseY <= module.y + module.height) {
+                    if (button == 0) { module.enabled = !module.enabled; updateModuleConfig(module.name, module.enabled); return true; }
+                    if (button == 1) { module.expanded = !module.expanded; return true; }
                 }
-                if (isHovered(mouseX, mouseY, x3 + 10, skyY + 101, 100, 4)) {
-                    BiwerVisualsClient.CONFIG.skySpeed = (float) Math.max(0, Math.min(100, (mouseX - (x3 + 10))));
-                    return true;
-                }
-
-                // Северное сияние
-                if (isHovered(mouseX, mouseY, x3 + 10, skyY + SKY_AURORA_TOGGLE_Y, 15, 8)) {
-                    BiwerVisualsClient.CONFIG.auroraEnabled = !BiwerVisualsClient.CONFIG.auroraEnabled;
-                    if (BiwerVisualsClient.CONFIG.auroraEnabled) BiwerVisualsClient.CONFIG.customSkyEnabled = true;
-                    return true;
-                }
-                if (BiwerVisualsClient.CONFIG.auroraEnabled) {
-                    if (isHovered(mouseX, mouseY, x3 + 10, skyY + SKY_AURORA_BOTTOM_SLIDER_Y, 30, 4)) {
-                        BiwerVisualsClient.CONFIG.auroraColorBottom = withChannel(BiwerVisualsClient.CONFIG.auroraColorBottom, 16, channelValue(mouseX, x3 + 10, 30));
-                        return true;
+                if (module.expandAnim > 0.01f) {
+                    for (SettingEntry s : module.settings) {
+                        if (!s.visible.getAsBoolean()) continue;
+                        if (mouseX >= s.x && mouseX <= s.x + s.width && mouseY >= s.y && mouseY <= s.y + 14) {
+                            s.value = Math.max(0f, Math.min(1f, (float)((mouseX - (s.x + 2)) / (s.width - 4))));
+                            s.onChange.accept(s.value);
+                            draggingSetting = s;
+                            return true;
+                        }
                     }
-                    if (isHovered(mouseX, mouseY, x3 + 45, skyY + SKY_AURORA_BOTTOM_SLIDER_Y, 30, 4)) {
-                        BiwerVisualsClient.CONFIG.auroraColorBottom = withChannel(BiwerVisualsClient.CONFIG.auroraColorBottom, 8, channelValue(mouseX, x3 + 45, 30));
-                        return true;
+                    for (BooleanSetting b : module.booleans) {
+                        if (!b.visible.getAsBoolean()) continue;
+                        if (mouseX >= b.x && mouseX <= b.x + b.width && mouseY >= b.y && mouseY <= b.y + b.height) {
+                            if (button == 0) { b.value = !b.value; b.onChange.accept(b.value); return true; }
+                        }
                     }
-                    if (isHovered(mouseX, mouseY, x3 + 80, skyY + SKY_AURORA_BOTTOM_SLIDER_Y, 30, 4)) {
-                        BiwerVisualsClient.CONFIG.auroraColorBottom = withChannel(BiwerVisualsClient.CONFIG.auroraColorBottom, 0, channelValue(mouseX, x3 + 80, 30));
-                        return true;
+                    for (ModeSetting m : module.modes) {
+                        if (!m.visible.getAsBoolean()) continue;
+                        if (mouseX >= m.x && mouseX <= m.x + m.width && mouseY >= m.y && mouseY <= m.y + m.height) {
+                            if (button == 0) { m.index = (m.index + 1) % m.options.length; m.onChange.accept(m.index); return true; }
+                        }
                     }
-                    if (isHovered(mouseX, mouseY, x3 + 10, skyY + SKY_AURORA_TOP_SLIDER_Y, 30, 4)) {
-                        BiwerVisualsClient.CONFIG.auroraColorTop = withChannel(BiwerVisualsClient.CONFIG.auroraColorTop, 16, channelValue(mouseX, x3 + 10, 30));
-                        return true;
-                    }
-                    if (isHovered(mouseX, mouseY, x3 + 45, skyY + SKY_AURORA_TOP_SLIDER_Y, 30, 4)) {
-                        BiwerVisualsClient.CONFIG.auroraColorTop = withChannel(BiwerVisualsClient.CONFIG.auroraColorTop, 8, channelValue(mouseX, x3 + 45, 30));
-                        return true;
-                    }
-                    if (isHovered(mouseX, mouseY, x3 + 80, skyY + SKY_AURORA_TOP_SLIDER_Y, 30, 4)) {
-                        BiwerVisualsClient.CONFIG.auroraColorTop = withChannel(BiwerVisualsClient.CONFIG.auroraColorTop, 0, channelValue(mouseX, x3 + 80, 30));
-                        return true;
-                    }
-                    if (isHovered(mouseX, mouseY, x3 + 10, skyY + SKY_AURORA_BRIGHT_SLIDER_Y, 100, 4)) {
-                        BiwerVisualsClient.CONFIG.auroraBrightness = (float) Math.max(0, Math.min(100, (mouseX - (x3 + 10))));
-                        return true;
-                    }
-
-                }
-            }
-
-            // Fly
-
-            if (isHovered(mouseX, mouseY, x2 + 90, flyY + 5, 20, 10)) {
-                BiwerVisualsClient.CONFIG.flyEnabled = !BiwerVisualsClient.CONFIG.flyEnabled;
-                return true;
-            }
-
-            // Sprint
-            if (isHovered(mouseX, mouseY, x2 + 90, sprintY + 5, 20, 10)) {
-                BiwerVisualsClient.CONFIG.sprintEnabled = !BiwerVisualsClient.CONFIG.sprintEnabled;
-                return true;
-            }
-
-            // Speed
-            int speedY = flyY + 60;
-            if (isHovered(mouseX, mouseY, x2 + 90, speedY + 5, 20, 10)) {
-                BiwerVisualsClient.CONFIG.speedEnabled = !BiwerVisualsClient.CONFIG.speedEnabled;
-                return true;
-            }
-            if (!BiwerVisualsClient.CONFIG.speedCollapsed) {
-                if (isHovered(mouseX, mouseY, x2 + 10, speedY + 32, 100, 4)) {
-                    BiwerVisualsClient.CONFIG.speedPercent = (float) Math.max(5, Math.min(60, Math.round((mouseX - (x2 + 10)) / 100.0 * 55 + 5)));
-                    return true;
-                }
-                if (isHovered(mouseX, mouseY, x2 + 10, speedY + 45, 15, 8)) { BiwerVisualsClient.CONFIG.speedOnlySprint = !BiwerVisualsClient.CONFIG.speedOnlySprint; return true; }
-                if (isHovered(mouseX, mouseY, x2 + 10, speedY + 58, 15, 8)) { BiwerVisualsClient.CONFIG.speedSmooth = !BiwerVisualsClient.CONFIG.speedSmooth; return true; }
-                if (isHovered(mouseX, mouseY, x2 + 10, speedY + 71, 15, 8)) { BiwerVisualsClient.CONFIG.speedSkipIfPotion = !BiwerVisualsClient.CONFIG.speedSkipIfPotion; return true; }
-            }
-
-            // BunnyHop
-            int bhopY = speedY + (BiwerVisualsClient.CONFIG.speedCollapsed ? 30 : 100);
-            if (isHovered(mouseX, mouseY, x2 + 90, bhopY + 5, 20, 10)) {
-                BiwerVisualsClient.CONFIG.bunnyHopEnabled = !BiwerVisualsClient.CONFIG.bunnyHopEnabled;
-                return true;
-            }
-            if (!BiwerVisualsClient.CONFIG.bunnyHopCollapsed) {
-                if (isHovered(mouseX, mouseY, x2 + 10, bhopY + 20, 15, 8)) { BiwerVisualsClient.CONFIG.bhopAutoJump = !BiwerVisualsClient.CONFIG.bhopAutoJump; return true; }
-                if (isHovered(mouseX, mouseY, x2 + 10, bhopY + 33, 15, 8)) { BiwerVisualsClient.CONFIG.bhopOnlyWhileMoving = !BiwerVisualsClient.CONFIG.bhopOnlyWhileMoving; return true; }
-                if (isHovered(mouseX, mouseY, x2 + 10, bhopY + 58, 100, 4)) {
-                    BiwerVisualsClient.CONFIG.bhopJumpDelay = (int) Math.round((mouseX - (x2 + 10)) / 100.0 * 20);
-                    return true;
-                }
-            }
-
-            // TargetStrafe
-            int strafeY = bhopY + (BiwerVisualsClient.CONFIG.bunnyHopCollapsed ? 30 : 90);
-            if (isHovered(mouseX, mouseY, x2 + 90, strafeY + 5, 20, 10)) {
-                BiwerVisualsClient.CONFIG.targetStrafeEnabled = !BiwerVisualsClient.CONFIG.targetStrafeEnabled;
-                return true;
-            }
-            if (!BiwerVisualsClient.CONFIG.targetStrafeCollapsed) {
-                if (isHovered(mouseX, mouseY, x2 + 10, strafeY + 20, 15, 8)) { BiwerVisualsClient.CONFIG.strafeAutoJump = !BiwerVisualsClient.CONFIG.strafeAutoJump; return true; }
-                if (isHovered(mouseX, mouseY, x2 + 10, strafeY + 45, 100, 4)) {
-                    BiwerVisualsClient.CONFIG.strafeRange = (float) Math.max(0.5, Math.min(4.0, (mouseX - (x2 + 10)) / 100.0 * 3.5 + 0.5));
-                    return true;
-                }
-            }
-
-            // AutoTotem (Player)
-            if (isHovered(mouseX, mouseY, x4 + 90, autoTotemY + 5, 20, 10)) {
-                BiwerVisualsClient.CONFIG.autoTotemEnabled = !BiwerVisualsClient.CONFIG.autoTotemEnabled;
-                return true;
-            }
-            if (!BiwerVisualsClient.CONFIG.autoTotemCollapsed) {
-                if (isHovered(mouseX, mouseY, x4 + 10, autoTotemY + 35, 100, 4)) {
-                    BiwerVisualsClient.CONFIG.autoTotemDelay = (int) Math.round((mouseX - (x4 + 10)) / 100.0 * 19 + 1);
-                    return true;
-                }
-            }
-
-            // Velocity
-            int velocityY = autoTotemY + (BiwerVisualsClient.CONFIG.autoTotemCollapsed ? 30 : 60);
-            if (isHovered(mouseX, mouseY, x4 + 90, velocityY + 5, 20, 10)) { BiwerVisualsClient.CONFIG.velocityEnabled = !BiwerVisualsClient.CONFIG.velocityEnabled; return true; }
-            if (!BiwerVisualsClient.CONFIG.velocityCollapsed) {
-                if (isHovered(mouseX, mouseY, x4 + 10, velocityY + 32, 50, 12)) { BiwerVisualsClient.CONFIG.velocityMode = 0; return true; }
-                if (isHovered(mouseX, mouseY, x4 + 64, velocityY + 32, 46, 12)) { BiwerVisualsClient.CONFIG.velocityMode = 1; return true; }
-                if (isHovered(mouseX, mouseY, x4 + 10, velocityY + 58, 100, 4)) { BiwerVisualsClient.CONFIG.velocityPercent = (float) Math.max(0, Math.min(100, (mouseX - (x4 + 10)))); return true; }
-            }
-
-            // HUD
-            int miscX = startX + (colWidth + padding) * 4;
-            int hudY = startY + 30;
-            if (isHovered(mouseX, mouseY, miscX + 90, hudY + 5, 20, 10)) {
-                BiwerVisualsClient.CONFIG.hudEnabled = !BiwerVisualsClient.CONFIG.hudEnabled;
-                return true;
-            }
-            if (isHovered(mouseX, mouseY, miscX + 10, hudY + 24, 100, 14)) {
-                if (this.minecraft != null) this.minecraft.setScreen(new HudEditorScreen(this));
-                return true;
-            }
-
-            // FullBright
-            int fullBrightY = hudY + 50;
-            if (isHovered(mouseX, mouseY, miscX + 90, fullBrightY + 5, 20, 10)) { BiwerVisualsClient.CONFIG.fullBrightEnabled = !BiwerVisualsClient.CONFIG.fullBrightEnabled; return true; }
-            if (!BiwerVisualsClient.CONFIG.fullBrightCollapsed) {
-                if (isHovered(mouseX, mouseY, miscX + 10, fullBrightY + 32, 50, 12)) { BiwerVisualsClient.CONFIG.fullBrightMode = 0; return true; }
-                if (isHovered(mouseX, mouseY, miscX + 64, fullBrightY + 32, 46, 12)) { BiwerVisualsClient.CONFIG.fullBrightMode = 1; return true; }
-                if (isHovered(mouseX, mouseY, miscX + 10, fullBrightY + 58, 100, 4)) { BiwerVisualsClient.CONFIG.fullBrightGamma = (float) (1.0 + (mouseX - (miscX + 10)) / 100.0 * 7.0); return true; }
-            }
-
-            // Crosshair
-            int crosshairY = fullBrightY + (BiwerVisualsClient.CONFIG.fullBrightCollapsed ? 30 : 80);
-            if (isHovered(mouseX, mouseY, miscX + 90, crosshairY + 5, 20, 10)) { BiwerVisualsClient.CONFIG.crosshairEnabled = !BiwerVisualsClient.CONFIG.crosshairEnabled; return true; }
-            if (!BiwerVisualsClient.CONFIG.crosshairCollapsed) {
-                if (isHovered(mouseX, mouseY, miscX + 10, crosshairY + 32, 100, 4)) { BiwerVisualsClient.CONFIG.crosshairGap = (float) ((mouseX - (miscX + 10)) / 100.0 * 6.0); return true; }
-                if (isHovered(mouseX, mouseY, miscX + 10, crosshairY + 57, 100, 4)) { BiwerVisualsClient.CONFIG.crosshairLength = (float) (2.0 + (mouseX - (miscX + 10)) / 100.0 * 3.0); return true; }
-                if (isHovered(mouseX, mouseY, miscX + 10, crosshairY + 70, 15, 8)) { BiwerVisualsClient.CONFIG.crosshairOutline = !BiwerVisualsClient.CONFIG.crosshairOutline; return true; }
-                if (isHovered(mouseX, mouseY, miscX + 70, crosshairY + 70, 15, 8)) { BiwerVisualsClient.CONFIG.crosshairCenterDot = !BiwerVisualsClient.CONFIG.crosshairCenterDot; return true; }
-                if (isHovered(mouseX, mouseY, miscX + 10, crosshairY + 83, 15, 8)) { BiwerVisualsClient.CONFIG.crosshairAdaptive = !BiwerVisualsClient.CONFIG.crosshairAdaptive; return true; }
-            }
-
-            // SwingAnimation
-            int swingY = crosshairY + (BiwerVisualsClient.CONFIG.crosshairCollapsed ? 30 : 106);
-            if (isHovered(mouseX, mouseY, miscX + 90, swingY + 5, 20, 10)) { BiwerVisualsClient.CONFIG.swingAnimationEnabled = !BiwerVisualsClient.CONFIG.swingAnimationEnabled; return true; }
-            if (!BiwerVisualsClient.CONFIG.swingAnimationCollapsed) {
-                for (int i = 0; i < 5; i++) {
-                    if (isHovered(mouseX, mouseY, miscX + 10 + i * 20, swingY + 32, 18, 12)) {
-                        BiwerVisualsClient.CONFIG.swingAnimationMode = i;
-                        return true;
+                    for (ColorSetting c : module.colors) {
+                        if (!c.visible.getAsBoolean()) continue;
+                        if (mouseX >= c.x + c.width - 14 && mouseX <= c.x + c.width - 4 && mouseY >= c.y - 1 && mouseY <= c.y + 9) {
+                            if (button == 0) { c.open = !c.open; return true; }
+                        }
                     }
                 }
-                if (isHovered(mouseX, mouseY, miscX + 10, swingY + 58, 100, 4)) { BiwerVisualsClient.CONFIG.swingAngle = (float) ((mouseX - (miscX + 10)) / 100.0 * 360.0); return true; }
-                if (isHovered(mouseX, mouseY, miscX + 10, swingY + 83, 100, 4)) { BiwerVisualsClient.CONFIG.swingTipTilt = (float) (-90.0 + (mouseX - (miscX + 10)) / 100.0 * 180.0); return true; }
-                if (isHovered(mouseX, mouseY, miscX + 10, swingY + 108, 100, 4)) { BiwerVisualsClient.CONFIG.swingPower = (float) (1.0 + (mouseX - (miscX + 10)) / 100.0 * 9.0); return true; }
-            }
-
-            // SeeInvisibles
-            int seeY = swingY + (BiwerVisualsClient.CONFIG.swingAnimationCollapsed ? 30 : 130);
-            if (isHovered(mouseX, mouseY, miscX + 90, seeY + 5, 20, 10)) { BiwerVisualsClient.CONFIG.seeInvisiblesEnabled = !BiwerVisualsClient.CONFIG.seeInvisiblesEnabled; return true; }
-
-            // Закрытие
-            if (mouseX >= this.width - 20 && mouseX <= this.width - 10 && mouseY >= 10 && mouseY <= 20) {
-                this.onClose();
-                return true;
             }
         }
         return super.mouseClicked(click, doubled);
     }
 
-    private boolean isHovered(double mouseX, double mouseY, int x, int y, int w, int h) {
-        return mouseX >= x && mouseX <= x + w && mouseY >= y && mouseY <= y + h;
+    @Override
+    public boolean mouseDragged(MouseButtonEvent click, double dragX, double dragY) {
+        if (draggingSetting != null) {
+            draggingSetting.value = Math.max(0f, Math.min(1f, (float)((click.x() - (draggingSetting.x + 2)) / (draggingSetting.width - 4))));
+            draggingSetting.onChange.accept(draggingSetting.value);
+            return true;
+        }
+        return super.mouseDragged(click, dragX, dragY);
     }
 
     @Override
-    public void onClose() {
-        if (this.minecraft != null) {
-            this.minecraft.setScreen(this.parent);
+    public boolean mouseReleased(MouseButtonEvent click) {
+        if (draggingSetting != null) { draggingSetting = null; return true; }
+        return super.mouseReleased(click);
+    }
+
+    @Override
+    public boolean keyPressed(KeyEvent event) {
+        if (event.key() == GLFW.GLFW_KEY_BACKSPACE) { if (!searchQuery.isEmpty()) searchQuery = searchQuery.substring(0, searchQuery.length() - 1); return true; }
+        return super.keyPressed(event);
+    }
+
+    @Override
+    public boolean charTyped(CharacterEvent event) {
+        char c = (char) event.codepoint();
+        if (c >= 32 && c < 127) { searchQuery += c; return true; }
+        return super.charTyped(event);
+    }
+
+    private void updateModuleConfig(String name, boolean state) {
+        switch (name) {
+            case "KillAura" -> BiwerVisualsClient.CONFIG.killAuraEnabled = state;
+            case "Aura" -> BiwerVisualsClient.CONFIG.auraEnabled = state;
+            case "TriggerBot" -> BiwerVisualsClient.CONFIG.triggerBotEnabled = state;
+            case "AimAssistant" -> BiwerVisualsClient.CONFIG.aimAssistEnabled = state;
+            case "Velocity" -> BiwerVisualsClient.CONFIG.velocityEnabled = state;
+            case "Fly" -> BiwerVisualsClient.CONFIG.flyEnabled = state;
+            case "Sprint" -> BiwerVisualsClient.CONFIG.sprintEnabled = state;
+            case "Speed" -> BiwerVisualsClient.CONFIG.speedEnabled = state;
+            case "BunnyHop" -> BiwerVisualsClient.CONFIG.bunnyHopEnabled = state;
+            case "TargetStrafe" -> BiwerVisualsClient.CONFIG.targetStrafeEnabled = state;
+            case "Ambience" -> BiwerVisualsClient.CONFIG.ambienceEnabled = state;
+            case "Viewmodel" -> BiwerVisualsClient.CONFIG.viewmodelEnabled = state;
+            case "EntityESP" -> BiwerVisualsClient.CONFIG.espEnabled = state;
+            case "Tags" -> BiwerVisualsClient.CONFIG.tagsEnabled = state;
+            case "JumpCircles" -> BiwerVisualsClient.CONFIG.jumpCirclesEnabled = state;
+            case "CustomSky" -> BiwerVisualsClient.CONFIG.customSkyEnabled = state;
+            case "ChinaHat" -> BiwerVisualsClient.CONFIG.chinaHatEnabled = state;
+            case "AutoTotem" -> BiwerVisualsClient.CONFIG.autoTotemEnabled = state;
+            case "HUD" -> BiwerVisualsClient.CONFIG.hudEnabled = state;
+            case "FullBright" -> BiwerVisualsClient.CONFIG.fullBrightEnabled = state;
+            case "Crosshair" -> BiwerVisualsClient.CONFIG.crosshairEnabled = state;
+            case "SwingAnimation" -> BiwerVisualsClient.CONFIG.swingAnimationEnabled = state;
+            case "SeeInvisibles" -> BiwerVisualsClient.CONFIG.seeInvisiblesEnabled = state;
         }
     }
 
     @Override
-    public boolean isPauseScreen() {
-        return false;
+    public void onClose() {
+        if (this.minecraft != null) this.minecraft.setScreen(this.parent);
     }
+
+    @Override
+    public boolean isPauseScreen() { return false; }
 }

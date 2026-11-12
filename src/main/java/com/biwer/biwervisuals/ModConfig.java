@@ -202,4 +202,10 @@ public class ModConfig {
 
     // --- SeeInvisibles ---
     public boolean seeInvisiblesEnabled = false;
+
+    public boolean chinaHatEnabled = false;
+    public boolean chinaHatSelf = true;
+    public boolean chinaHatFriends = true;
+    public boolean chinaHatAll = false;
+    public int chinaHatColor = 0xFFAB9FF2;
 }

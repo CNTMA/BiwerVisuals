@@ -208,4 +208,11 @@ public class ModConfig {
     public boolean chinaHatFriends = true;
     public boolean chinaHatAll = false;
     public int chinaHatColor = 0xFFAB9FF2;
+    // --- Viewmodel (порт aethereal View Model) ---
+    public float vmMainX = 0.0f;
+    public float vmMainY = 0.0f;
+    public float vmMainZ = 0.0f;
+    public float vmOffX = 0.0f;
+    public float vmOffY = 0.0f;
+    public float vmOffZ = 0.0f;
 }

@@ -89,6 +89,8 @@ public class BiwerVisualsClient implements ClientModInitializer {
 
         AutoTotem.init();
 
+        //DiscordRPC.init();
+
         // 4. Загрузка биндов из конфига при старте
         for (Map.Entry<String, Integer> entry : CONFIG.binds.entrySet()) {
             BindManager.addBind(entry.getKey(), entry.getValue());

@@ -17,14 +17,33 @@ plugins {
 
 repositories {
 	mavenCentral()
+	maven { url = "https://maven.fabricmc.net/" }
+	maven { url = "https://cursemaven.com" }
 }
 
 dependencies {
+	// --- Minecraft / Fabric ---
 	minecraft "com.mojang:minecraft:${project.minecraft_version}"
 	implementation "net.fabricmc:fabric-loader:${project.loader_version}"
 	implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
 	implementation "net.fabricmc.fabric-api:fabric-command-api-v2:${project.fabric_api_version}"
+
+	// --- EmbersTextAPI (если нужен) ---
+	// implementation "curse.maven:embers-text-api-1345948:8619566"
+
+	// --- DiscordIPC + зависимости (include для вложения в jar) ---
+	//implementation files('libs/DiscordIPC-0.10.2.jar')
+	//include files('libs/DiscordIPC-0.10.2.jar')
+
+	// Транзитивные зависимости (их можно оставить как include(implementation(...)))
+	//include(implementation("com.google.code.gson:gson:2.10.1"))
+	//include(implementation("org.slf4j:slf4j-api:2.0.12"))
+	//include(implementation("com.kohlschutter.junixsocket:junixsocket-common:2.9.1"))
+	//include(implementation("com.kohlschutter.junixsocket:junixsocket-native-common:2.9.1"))
+	//include(implementation("net.lenni0451:Reflect:1.3.2"))
+
 }
+
 
 processResources {
 	def version = project.version
@@ -50,7 +69,7 @@ jar {
 	inputs.property "projectName", projectName
 
 	from("LICENSE") {
-		rename { "${it}_$projectName"}
+		rename { "${it}_$projectName" }
 	}
 }
 
@@ -70,10 +89,8 @@ tasks.withType(AbstractCopyTask).configureEach {
 
 // ================= НАСТРОЙКА ОБФУСКАЦИИ (PROGUARD) =================
 
-// Настройка ShadowJar (собирает все зависимости в один JAR)
-
 // ================= СБОРКА =================
 // Fabric API в тени даёт больше 65535 записей, без zip64 shadowJar падает
 tasks.named("shadowJar") {
-    zip64 = true
+	zip64 = true
 }

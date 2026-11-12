@@ -6,7 +6,6 @@ import net.minecraft.client.input.CharacterEvent;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.Identifier;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
@@ -27,12 +26,6 @@ public class ClickGuiScreen extends Screen {
     private String searchQuery = "";
     private final List<Category> categories = new ArrayList<>();
     private SettingEntry draggingSetting = null;
-
-    // Инициализация кастомного шрифта
-    private final CustomFont customFont = new CustomFont(
-            Identifier.fromNamespaceAndPath("biwervisuals", "fonts/icons.json"),
-            Identifier.fromNamespaceAndPath("biwervisuals", "fonts/icons.png")
-    );
 
     private static class Category {
         String name;
@@ -279,8 +272,7 @@ public class ClickGuiScreen extends Screen {
         graphics.fill(0, 0, this.width, this.height, 0x88000000);
         drawRoundedRect(graphics, (this.width - 220) / 2, 10, 220, 20, 4, moduleBg);
 
-        // CUSTOM FONT
-        customFont.drawText(graphics, "Поиск: " + searchQuery, (this.width - 220) / 2 + 6, 16, 8.5f, textColor);
+        graphics.text(this.font, "Поиск: " + searchQuery, (this.width - 220) / 2 + 6, 16, textColor, false);
 
         int currentX = startX;
         for (Category cat : categories) {
@@ -293,9 +285,7 @@ public class ClickGuiScreen extends Screen {
 
     private void renderCategory(GuiGraphicsExtractor graphics, Category cat, int mouseX, int mouseY, float delta) {
         drawRoundedRect(graphics, cat.x, cat.y, cat.width, 18, 4, moduleBg);
-
-        // CUSTOM FONT
-        customFont.drawText(graphics, cat.name, cat.x + 6, cat.y + 5, 8.5f, activeColor);
+        graphics.text(this.font, cat.name, cat.x + 6, cat.y + 5, activeColor, false);
 
         int moduleY = cat.y + 24;
         for (ModuleEntry module : cat.modules) {
@@ -306,26 +296,19 @@ public class ClickGuiScreen extends Screen {
             module.expandAnim += ((module.expanded ? 1f : 0f) - module.expandAnim) * 0.2f;
 
             drawRoundedRect(graphics, module.x, module.y, module.width, module.height, 3, module.enabled ? 0x33AB9FF2 : 0x22000000);
-
-            // CUSTOM FONT
-            customFont.drawText(graphics, module.name, module.x + 6, module.y + 4, 8.5f, module.enabled ? activeColor : textMuted);
+            graphics.text(this.font, module.name, module.x + 6, module.y + 4, module.enabled ? activeColor : textMuted, false);
 
             int toggleX = module.x + module.width - 16, toggleY = module.y + 4;
             drawRoundedRect(graphics, toggleX, toggleY, 12, 8, 4, sliderBg);
             drawRoundedRect(graphics, (int)(toggleX + 1 + (module.animState * 6)), toggleY + 1, 6, 6, 3, module.enabled ? activeColor : 0xFFFFFFFF);
-
-            // CUSTOM FONT (стрелочка)
-            customFont.drawText(graphics, module.expanded ? "v" : ">", toggleX - 10, module.y + 4, 8.5f, textMuted);
+            graphics.text(this.font, module.expanded ? "v" : ">", toggleX - 10, module.y + 4, textMuted, false);
 
             int settingsY = module.y + module.height + 2;
             if (module.expandAnim > 0.01f) {
                 for (SettingEntry s : module.settings) {
                     if (!s.visible.getAsBoolean()) continue;
                     s.x = module.x + 2; s.y = settingsY; s.width = module.width - 4;
-
-                    // CUSTOM FONT
-                    customFont.drawText(graphics, s.name, s.x + 2, s.y, 8.0f, textMuted);
-
+                    graphics.text(this.font, s.name, s.x + 2, s.y, textMuted, false);
                     graphics.fill(s.x + 2, s.y + 8, s.x + s.width - 2, s.y + 11, sliderBg);
                     graphics.fill(s.x + 2, s.y + 8, s.x + 2 + (int)((s.width - 4) * s.value), s.y + 11, activeColor);
                     settingsY += 16;
@@ -333,10 +316,7 @@ public class ClickGuiScreen extends Screen {
                 for (BooleanSetting b : module.booleans) {
                     if (!b.visible.getAsBoolean()) continue;
                     b.x = module.x + 2; b.y = settingsY; b.width = module.width - 4;
-
-                    // CUSTOM FONT
-                    customFont.drawText(graphics, b.name, b.x + 2, b.y, 8.0f, textMuted);
-
+                    graphics.text(this.font, b.name, b.x + 2, b.y, textMuted, false);
                     drawRoundedRect(graphics, b.x + b.width - 14, b.y - 1, 10, 10, 3, sliderBg);
                     if (b.value) drawRoundedRect(graphics, b.x + b.width - 12, b.y + 1, 6, 6, 2, activeColor);
                     settingsY += 14;
@@ -344,18 +324,13 @@ public class ClickGuiScreen extends Screen {
                 for (ModeSetting m : module.modes) {
                     if (!m.visible.getAsBoolean()) continue;
                     m.x = module.x + 2; m.y = settingsY; m.width = module.width - 4;
-
-                    // CUSTOM FONT
-                    customFont.drawText(graphics, m.name + ": " + m.current(), m.x + 2, m.y, 8.0f, activeColor);
+                    graphics.text(this.font, m.name + ": " + m.current(), m.x + 2, m.y, activeColor, false);
                     settingsY += 14;
                 }
                 for (ColorSetting c : module.colors) {
                     if (!c.visible.getAsBoolean()) continue;
                     c.x = module.x + 2; c.y = settingsY; c.width = module.width - 4;
-
-                    // CUSTOM FONT
-                    customFont.drawText(graphics, c.name, c.x + 2, c.y, 8.0f, textMuted);
-
+                    graphics.text(this.font, c.name, c.x + 2, c.y, textMuted, false);
                     graphics.fill(c.x + c.width - 14, c.y - 1, c.x + c.width - 4, c.y + 9, 0xFF000000 | c.color);
                     settingsY += 14;
                 }

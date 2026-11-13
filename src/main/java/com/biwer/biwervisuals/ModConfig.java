@@ -215,4 +215,8 @@ public class ModConfig {
     public float vmOffX = 0.0f;
     public float vmOffY = 0.0f;
     public float vmOffZ = 0.0f;
+    public float swingZOffset = -1.0f;
+    public float vmRotMainX = 0.0f;
+    public float vmRotMainY = 0.0f;
+    public float vmRotMainZ = 0.0f;
 }

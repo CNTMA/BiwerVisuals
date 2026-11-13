@@ -63,8 +63,6 @@ public class BiwerVisualsClient implements ClientModInitializer {
 
         TargetStrafe.init();
 
-        KillAura.init();
-
         Aura.init();
 
         TriggerBot.init();

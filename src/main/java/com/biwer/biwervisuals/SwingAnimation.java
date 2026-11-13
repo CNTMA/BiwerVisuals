@@ -8,22 +8,29 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.HumanoidArm;
 
-/**
- * SwingAnimation — настраиваемая анимация взмаха руки (порт aethereal).
- *
- * Применяется в HeldItemRendererMixin в начале renderArmWithItem, до ванильных
- * трансформаций предмета. Пять режимов, угол поворота, наклон кончика и сила
- * взмаха настраиваются в GUI.
- */
 public class SwingAnimation {
     public static void init() {
         // Вызов из HeldItemRendererMixin.
     }
 
-    public static void apply(PoseStack matrices, AbstractClientPlayer player, InteractionHand hand, float swingProgress) {
+    /** Нужно ли гасить ванильный взмах. */
+    public static boolean cancelVanilla() {
+        if (!BiwerVisualsClient.CONFIG.swingAnimationEnabled) return false;
+        // Если AuraOnly выключен — отменяем ВСЕГДА, чтобы ванильный взмах не мешал.
+        if (!BiwerVisualsClient.CONFIG.swingAnimationAuraOnly) return true;
+        // Если AuraOnly включен — отменяем, только если есть цель.
+        return Aura.getTarget() != null;
+    }
+
+    public static void apply(PoseStack matrices, AbstractClientPlayer player, InteractionHand hand, float tickDelta) {
         if (!BiwerVisualsClient.CONFIG.swingAnimationEnabled) return;
         if (hand != InteractionHand.MAIN_HAND) return;
         if (BiwerVisualsClient.CONFIG.swingAnimationAuraOnly && Aura.getTarget() == null) return;
+
+        // Защита от NaN и выходов за пределы [0, 1]
+        float swingProgress = player.getAttackAnim(tickDelta);
+        if (Float.isNaN(swingProgress)) swingProgress = 0.0f;
+        swingProgress = Math.max(0.0f, Math.min(1.0f, swingProgress));
 
         HumanoidArm arm = player.getMainArm();
         int side = arm == HumanoidArm.RIGHT ? 1 : -1;
@@ -31,7 +38,9 @@ public class SwingAnimation {
         float anim = (float) Math.sin(swingProgress * Math.PI);
         float power = BiwerVisualsClient.CONFIG.swingPower * 10.0f;
 
-        matrices.translate(side * (mode == 4 ? 0.5f : 0.72f), -0.5f, mode == 4 ? -0.72f : -1.0f);
+        // Используем настройку из конфига для Z
+        float zOffset = BiwerVisualsClient.CONFIG.swingZOffset;
+        matrices.translate(side * (mode == 4 ? 0.5f : 0.72f), -0.5f, zOffset);
         if (mode != 4) {
             matrices.mulPose(Axis.XP.rotationDegrees(-BiwerVisualsClient.CONFIG.swingTipTilt));
         }

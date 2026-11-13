@@ -7,6 +7,7 @@ import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 import org.lwjgl.glfw.GLFW;
+import org.joml.Matrix3x2fStack;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -26,6 +27,11 @@ public class ClickGuiScreen extends Screen {
     private String searchQuery = "";
     private final List<Category> categories = new ArrayList<>();
     private SettingEntry draggingSetting = null;
+
+    // Анимация открытия/закрытия (твои настройки)
+    private float openAnim = 0.0f;
+    private float targetAnim = 1.0f;
+    private boolean closing = false;
 
     private static class Category {
         String name;
@@ -145,17 +151,25 @@ public class ClickGuiScreen extends Screen {
         // ================= COMBAT =================
         Category combat = new Category("Combat");
 
-        ModuleEntry killAura = new ModuleEntry("KillAura", BiwerVisualsClient.CONFIG.killAuraEnabled);
-        killAura.settings.add(new SettingEntry("Дистанция", (BiwerVisualsClient.CONFIG.killAuraRange - 1f) / 5f, v -> BiwerVisualsClient.CONFIG.killAuraRange = 1f + v * 5f));
-        killAura.settings.add(new SettingEntry("Плавность", BiwerVisualsClient.CONFIG.killAuraSmooth / 100f, v -> BiwerVisualsClient.CONFIG.killAuraSmooth = v * 100f));
-        killAura.modes.add(new ModeSetting("Наводка", new String[]{"Свободно", "Преследование", "Наводка"}, BiwerVisualsClient.CONFIG.aimMode, v -> BiwerVisualsClient.CONFIG.aimMode = v));
-        killAura.booleans.add(new BooleanSetting("Криты", BiwerVisualsClient.CONFIG.onlyCriticals, v -> BiwerVisualsClient.CONFIG.onlyCriticals = v));
-        combat.modules.add(killAura);
-
         ModuleEntry aura = new ModuleEntry("Aura", BiwerVisualsClient.CONFIG.auraEnabled);
         aura.settings.add(new SettingEntry("Дистанция", (BiwerVisualsClient.CONFIG.auraRange - 0.1f) / 5.9f, v -> BiwerVisualsClient.CONFIG.auraRange = 0.1f + v * 5.9f));
+        aura.settings.add(new SettingEntry("Доп. дистанция", BiwerVisualsClient.CONFIG.auraExtraRange / 3f, v -> BiwerVisualsClient.CONFIG.auraExtraRange = v * 3f));
         aura.modes.add(new ModeSetting("Наводка", new String[]{"ФанТайм", "ФанТайм ФОВ", "Легит"}, BiwerVisualsClient.CONFIG.auraAimMode, v -> BiwerVisualsClient.CONFIG.auraAimMode = v));
+        aura.modes.add(new ModeSetting("Приоритет", new String[]{"Прицел", "Дистанция", "ХП"}, BiwerVisualsClient.CONFIG.auraPriority, v -> BiwerVisualsClient.CONFIG.auraPriority = v));
+        aura.settings.add(new SettingEntry("Плавность", BiwerVisualsClient.CONFIG.auraSmooth / 100f, v -> BiwerVisualsClient.CONFIG.auraSmooth = v * 100f));
+        aura.settings.add(new SettingEntry("Скорость", BiwerVisualsClient.CONFIG.auraSpeed / 30f, v -> BiwerVisualsClient.CONFIG.auraSpeed = v * 30f));
+        aura.settings.add(new SettingEntry("FOV", (BiwerVisualsClient.CONFIG.auraFov - 10f) / 170f, v -> BiwerVisualsClient.CONFIG.auraFov = 10f + v * 170f));
+        aura.booleans.add(new BooleanSetting("Игроки", BiwerVisualsClient.CONFIG.auraPlayers, v -> BiwerVisualsClient.CONFIG.auraPlayers = v));
+        aura.booleans.add(new BooleanSetting("Мобы", BiwerVisualsClient.CONFIG.auraMobs, v -> BiwerVisualsClient.CONFIG.auraMobs = v));
+        aura.booleans.add(new BooleanSetting("Животные", BiwerVisualsClient.CONFIG.auraAnimals, v -> BiwerVisualsClient.CONFIG.auraAnimals = v));
+        aura.booleans.add(new BooleanSetting("Без брони", BiwerVisualsClient.CONFIG.auraNaked, v -> BiwerVisualsClient.CONFIG.auraNaked = v));
         aura.booleans.add(new BooleanSetting("Криты", BiwerVisualsClient.CONFIG.auraOnlyCriticals, v -> BiwerVisualsClient.CONFIG.auraOnlyCriticals = v));
+        aura.booleans.add(new BooleanSetting("Адаптивные прыжки", BiwerVisualsClient.CONFIG.auraAdaptiveHits, v -> BiwerVisualsClient.CONFIG.auraAdaptiveHits = v));
+        aura.booleans.add(new BooleanSetting("Щитолом", BiwerVisualsClient.CONFIG.auraShieldBreaker, v -> BiwerVisualsClient.CONFIG.auraShieldBreaker = v));
+        aura.booleans.add(new BooleanSetting("Смарт-спринт", BiwerVisualsClient.CONFIG.auraSmartSprint, v -> BiwerVisualsClient.CONFIG.auraSmartSprint = v));
+        aura.booleans.add(new BooleanSetting("Не бить при использовании", BiwerVisualsClient.CONFIG.auraDontHitItemUse, v -> BiwerVisualsClient.CONFIG.auraDontHitItemUse = v));
+        aura.booleans.add(new BooleanSetting("Не бить в контейнере", BiwerVisualsClient.CONFIG.auraDontHitContainer, v -> BiwerVisualsClient.CONFIG.auraDontHitContainer = v));
+        aura.booleans.add(new BooleanSetting("Не бить через стены", BiwerVisualsClient.CONFIG.auraDontHitThroughWalls, v -> BiwerVisualsClient.CONFIG.auraDontHitThroughWalls = v));
         combat.modules.add(aura);
 
         ModuleEntry triggerBot = new ModuleEntry("TriggerBot", BiwerVisualsClient.CONFIG.triggerBotEnabled);
@@ -168,6 +182,7 @@ public class ClickGuiScreen extends Screen {
 
         ModuleEntry velocity = new ModuleEntry("Velocity", BiwerVisualsClient.CONFIG.velocityEnabled);
         velocity.settings.add(new SettingEntry("Сила", BiwerVisualsClient.CONFIG.velocityPercent / 100f, v -> BiwerVisualsClient.CONFIG.velocityPercent = v * 100f));
+        velocity.modes.add(new ModeSetting("Режим", new String[]{"Обычный", "Легитный"}, BiwerVisualsClient.CONFIG.velocityMode, v -> BiwerVisualsClient.CONFIG.velocityMode = v));
         combat.modules.add(velocity);
 
         categories.add(combat);
@@ -179,14 +194,18 @@ public class ClickGuiScreen extends Screen {
 
         ModuleEntry speed = new ModuleEntry("Speed", BiwerVisualsClient.CONFIG.speedEnabled);
         speed.settings.add(new SettingEntry("Буст", (BiwerVisualsClient.CONFIG.speedPercent - 5f) / 55f, v -> BiwerVisualsClient.CONFIG.speedPercent = 5f + v * 55f));
+        speed.booleans.add(new BooleanSetting("Только спринт", BiwerVisualsClient.CONFIG.speedOnlySprint, v -> BiwerVisualsClient.CONFIG.speedOnlySprint = v));
+        speed.booleans.add(new BooleanSetting("Плавно", BiwerVisualsClient.CONFIG.speedSmooth, v -> BiwerVisualsClient.CONFIG.speedSmooth = v));
         movement.modules.add(speed);
 
         ModuleEntry bunnyHop = new ModuleEntry("BunnyHop", BiwerVisualsClient.CONFIG.bunnyHopEnabled);
         bunnyHop.settings.add(new SettingEntry("Задержка", BiwerVisualsClient.CONFIG.bhopJumpDelay / 20f, v -> BiwerVisualsClient.CONFIG.bhopJumpDelay = (int)(v * 20f)));
+        bunnyHop.booleans.add(new BooleanSetting("Только в движении", BiwerVisualsClient.CONFIG.bhopOnlyWhileMoving, v -> BiwerVisualsClient.CONFIG.bhopOnlyWhileMoving = v));
         movement.modules.add(bunnyHop);
 
         ModuleEntry targetStrafe = new ModuleEntry("TargetStrafe", BiwerVisualsClient.CONFIG.targetStrafeEnabled);
         targetStrafe.settings.add(new SettingEntry("Дистанция", (BiwerVisualsClient.CONFIG.strafeRange - 0.5f) / 3.5f, v -> BiwerVisualsClient.CONFIG.strafeRange = 0.5f + v * 3.5f));
+        targetStrafe.booleans.add(new BooleanSetting("Авто-прыжок", BiwerVisualsClient.CONFIG.strafeAutoJump, v -> BiwerVisualsClient.CONFIG.strafeAutoJump = v));
         movement.modules.add(targetStrafe);
 
         categories.add(movement);
@@ -200,9 +219,22 @@ public class ClickGuiScreen extends Screen {
         render.modules.add(ambience);
 
         ModuleEntry viewmodel = new ModuleEntry("Viewmodel", BiwerVisualsClient.CONFIG.viewmodelEnabled);
+
+        // Смещения основной руки
         viewmodel.settings.add(new SettingEntry("Main X", (BiwerVisualsClient.CONFIG.vmMainX + 2f) / 4f, v -> BiwerVisualsClient.CONFIG.vmMainX = v * 4f - 2f));
         viewmodel.settings.add(new SettingEntry("Main Y", (BiwerVisualsClient.CONFIG.vmMainY + 2f) / 4f, v -> BiwerVisualsClient.CONFIG.vmMainY = v * 4f - 2f));
         viewmodel.settings.add(new SettingEntry("Main Z", (BiwerVisualsClient.CONFIG.vmMainZ + 2f) / 4f, v -> BiwerVisualsClient.CONFIG.vmMainZ = v * 4f - 2f));
+
+        // Повороты основной руки (до 360 градусов)
+        viewmodel.settings.add(new SettingEntry("Rot Main X", (BiwerVisualsClient.CONFIG.vmRotMainX + 180f) / 360f, v -> BiwerVisualsClient.CONFIG.vmRotMainX = (v * 360f) - 180f));
+        viewmodel.settings.add(new SettingEntry("Rot Main Y", (BiwerVisualsClient.CONFIG.vmRotMainY + 180f) / 360f, v -> BiwerVisualsClient.CONFIG.vmRotMainY = (v * 360f) - 180f));
+        viewmodel.settings.add(new SettingEntry("Rot Main Z", (BiwerVisualsClient.CONFIG.vmRotMainZ + 180f) / 360f, v -> BiwerVisualsClient.CONFIG.vmRotMainZ = (v * 360f) - 180f));
+
+        // Смещения второй руки (без поворотов)
+        viewmodel.settings.add(new SettingEntry("Off X", (BiwerVisualsClient.CONFIG.vmOffX + 2f) / 4f, v -> BiwerVisualsClient.CONFIG.vmOffX = v * 4f - 2f));
+        viewmodel.settings.add(new SettingEntry("Off Y", (BiwerVisualsClient.CONFIG.vmOffY + 2f) / 4f, v -> BiwerVisualsClient.CONFIG.vmOffY = v * 4f - 2f));
+        viewmodel.settings.add(new SettingEntry("Off Z", (BiwerVisualsClient.CONFIG.vmOffZ + 2f) / 4f, v -> BiwerVisualsClient.CONFIG.vmOffZ = v * 4f - 2f));
+
         render.modules.add(viewmodel);
 
         ModuleEntry esp = new ModuleEntry("EntityESP", BiwerVisualsClient.CONFIG.espEnabled);
@@ -254,6 +286,12 @@ public class ClickGuiScreen extends Screen {
 
         ModuleEntry swing = new ModuleEntry("SwingAnimation", BiwerVisualsClient.CONFIG.swingAnimationEnabled);
         swing.modes.add(new ModeSetting("Режим", new String[]{"Мод 1", "Мод 2", "Мод 3", "Мод 4", "Мод 5"}, BiwerVisualsClient.CONFIG.swingAnimationMode, v -> BiwerVisualsClient.CONFIG.swingAnimationMode = v));
+
+        // НОВАЯ НАСТРОЙКА: Смещение по Z
+        // От 0.0f (рука у лица) до -1.5f (рука далеко)
+        swing.settings.add(new SettingEntry("Смещение Z", (BiwerVisualsClient.CONFIG.swingZOffset + 1.5f) / 1.5f,
+                v -> BiwerVisualsClient.CONFIG.swingZOffset = (v * 1.5f) - 1.5f));
+
         swing.settings.add(new SettingEntry("Угол", BiwerVisualsClient.CONFIG.swingAngle / 360f, v -> BiwerVisualsClient.CONFIG.swingAngle = v * 360f, () -> BiwerVisualsClient.CONFIG.swingAnimationMode == 0));
         swing.settings.add(new SettingEntry("Наклон", (BiwerVisualsClient.CONFIG.swingTipTilt + 90f) / 180f, v -> BiwerVisualsClient.CONFIG.swingTipTilt = v * 180f - 90f, () -> BiwerVisualsClient.CONFIG.swingAnimationMode != 4));
         swing.settings.add(new SettingEntry("Интенсивность", (BiwerVisualsClient.CONFIG.swingPower - 1f) / 9f, v -> BiwerVisualsClient.CONFIG.swingPower = 1f + v * 9f));
@@ -265,21 +303,42 @@ public class ClickGuiScreen extends Screen {
 
     @Override
     public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float delta) {
+        // Анимация окна (твои настройки)
+        if (closing) targetAnim = 0.0f;
+        openAnim += (targetAnim - openAnim) * 0.5f * delta;
+        if (closing && openAnim < 0.05f) {
+            openAnim = 0.0f;
+            if (this.minecraft != null) this.minecraft.setScreen(this.parent);
+            return;
+        }
+
         int colWidth = 120, gap = 6;
         int totalWidth = (colWidth * categories.size()) + (gap * (categories.size() - 1));
         int startX = (this.width - totalWidth) / 2, startY = 40;
 
-        graphics.fill(0, 0, this.width, this.height, 0x88000000);
-        drawRoundedRect(graphics, (this.width - 220) / 2, 10, 220, 20, 4, moduleBg);
+        graphics.fill(0, 0, this.width, this.height, (int)(0x88 * openAnim) << 24);
 
+        // Плавное появление
+        Matrix3x2fStack pose = graphics.pose();
+        pose.pushMatrix();
+        float scale = 0.85f + 0.15f * openAnim;
+        pose.translate(this.width / 2f, this.height / 2f);
+        pose.scale(scale, scale);
+        pose.translate(-this.width / 2f, -this.height / 2f);
+
+        // Поиск
+        drawRoundedRect(graphics, (this.width - 220) / 2, 10, 220, 20, 4, moduleBg);
         graphics.text(this.font, "Поиск: " + searchQuery, (this.width - 220) / 2 + 6, 16, textColor, false);
 
+        // Колонки
         int currentX = startX;
         for (Category cat : categories) {
             cat.x = currentX; cat.y = startY; cat.width = colWidth;
             renderCategory(graphics, cat, mouseX, mouseY, delta);
             currentX += colWidth + gap;
         }
+
+        pose.popMatrix();
         super.extractRenderState(graphics, mouseX, mouseY, delta);
     }
 
@@ -292,19 +351,47 @@ public class ClickGuiScreen extends Screen {
             if (!searchQuery.isEmpty() && !module.name.toLowerCase().contains(searchQuery.toLowerCase())) continue;
 
             module.x = cat.x + 2; module.y = moduleY; module.width = cat.width - 4;
-            module.animState += ((module.enabled ? 1f : 0f) - module.animState) * 0.2f;
-            module.expandAnim += ((module.expanded ? 1f : 0f) - module.expandAnim) * 0.2f;
 
+            float smoothDelta = Math.min(delta, 0.1f);
+            module.animState += ((module.enabled ? 1f : 0f) - module.animState) * 0.5f * smoothDelta;
+            module.expandAnim += ((module.expanded ? 1f : 0f) - module.expandAnim) * 0.5f * smoothDelta;
+
+            // Рисуем сам модуль
             drawRoundedRect(graphics, module.x, module.y, module.width, module.height, 3, module.enabled ? 0x33AB9FF2 : 0x22000000);
             graphics.text(this.font, module.name, module.x + 6, module.y + 4, module.enabled ? activeColor : textMuted, false);
 
+            // Тумблер
             int toggleX = module.x + module.width - 16, toggleY = module.y + 4;
             drawRoundedRect(graphics, toggleX, toggleY, 12, 8, 4, sliderBg);
             drawRoundedRect(graphics, (int)(toggleX + 1 + (module.animState * 6)), toggleY + 1, 6, 6, 3, module.enabled ? activeColor : 0xFFFFFFFF);
             graphics.text(this.font, module.expanded ? "v" : ">", toggleX - 10, module.y + 4, textMuted, false);
 
-            int settingsY = module.y + module.height + 2;
+            // === РИСУЕМ НАСТРОЙКИ С АНИМАЦИЕЙ ===
             if (module.expandAnim > 0.01f) {
+                // Вычисляем полную высоту настроек (как будто они полностью раскрыты)
+                int fullSettingsHeight = 0;
+                for (SettingEntry s : module.settings) if (s.visible.getAsBoolean()) fullSettingsHeight += 16;
+                for (BooleanSetting b : module.booleans) if (b.visible.getAsBoolean()) fullSettingsHeight += 14;
+                for (ModeSetting m : module.modes) if (m.visible.getAsBoolean()) fullSettingsHeight += 14;
+                for (ColorSetting c : module.colors) if (c.visible.getAsBoolean()) fullSettingsHeight += 14;
+
+                // Текущая видимая высота (для Scissor)
+                int visibleHeight = (int) (fullSettingsHeight * module.expandAnim);
+
+                // Включаем Scissor: обрезаем всё, что ниже module.y + module.height + visibleHeight
+                // И не забываем про X-координаты (с запасом)
+                int scissorX = module.x - 2;
+                int scissorY = module.y + module.height;
+                int scissorW = module.width + 4;
+                int scissorH = visibleHeight + 2;
+
+                // Если высота > 0, включаем обрезку
+                if (scissorH > 0) {
+                    graphics.enableScissor(scissorX, scissorY, scissorX + scissorW, scissorY + scissorH);
+                }
+
+                int settingsY = module.y + module.height + 2;
+
                 for (SettingEntry s : module.settings) {
                     if (!s.visible.getAsBoolean()) continue;
                     s.x = module.x + 2; s.y = settingsY; s.width = module.width - 4;
@@ -334,9 +421,18 @@ public class ClickGuiScreen extends Screen {
                     graphics.fill(c.x + c.width - 14, c.y - 1, c.x + c.width - 4, c.y + 9, 0xFF000000 | c.color);
                     settingsY += 14;
                 }
+
+                // Выключаем Scissor
+                if (scissorH > 0) {
+                    graphics.disableScissor();
+                }
+
+                // Сдвиг для следующего модуля
+                moduleY += module.height + 2 + (int)(fullSettingsHeight * module.expandAnim);
+            } else {
+                // Если закрыт — просто сдвигаем на высоту модуля
+                moduleY += module.height + 2;
             }
-            moduleY = settingsY;
-            if (module.expandAnim <= 0.01f) moduleY += module.height + 2;
         }
     }
 
@@ -425,7 +521,6 @@ public class ClickGuiScreen extends Screen {
 
     private void updateModuleConfig(String name, boolean state) {
         switch (name) {
-            case "KillAura" -> BiwerVisualsClient.CONFIG.killAuraEnabled = state;
             case "Aura" -> BiwerVisualsClient.CONFIG.auraEnabled = state;
             case "TriggerBot" -> BiwerVisualsClient.CONFIG.triggerBotEnabled = state;
             case "AimAssistant" -> BiwerVisualsClient.CONFIG.aimAssistEnabled = state;
@@ -453,7 +548,7 @@ public class ClickGuiScreen extends Screen {
 
     @Override
     public void onClose() {
-        if (this.minecraft != null) this.minecraft.setScreen(this.parent);
+        closing = true;
     }
 
     @Override

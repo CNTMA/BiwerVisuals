@@ -534,7 +534,7 @@ public class Hud implements HudElement {
 
     private static int[] targetHud(GuiGraphicsExtractor g, Minecraft mc, int x, int y, boolean editor) {
         Font font = mc.font;
-        LivingEntity target = KillAura.getTarget();
+        LivingEntity target = Aura.getTarget(); // ← ЗАМЕНЕНО KillAura на Aura
 
         if (target == null) {
             if (!editor) return new int[]{0, 0};
@@ -565,7 +565,7 @@ public class Hud implements HudElement {
     private static List<String> enabledModules() {
         ModConfig c = BiwerVisualsClient.CONFIG;
         List<String> list = new ArrayList<>();
-        if (c.killAuraEnabled) list.add("KillAura");
+        if (c.auraEnabled) list.add("Aura"); // ← ЗАМЕНЕНО killAuraEnabled на auraEnabled
         if (c.speedEnabled) list.add("Speed");
         if (c.bunnyHopEnabled) list.add("BunnyHop");
         if (c.targetStrafeEnabled) list.add("TargetStrafe");
@@ -584,7 +584,7 @@ public class Hud implements HudElement {
     private static boolean isEnabled(String function) {
         ModConfig c = BiwerVisualsClient.CONFIG;
         return switch (function) {
-            case "killaura" -> c.killAuraEnabled;
+            case "aura" -> c.auraEnabled; // ← ЗАМЕНЕНО killaura на aura
             case "fly" -> c.flyEnabled;
             case "sprint" -> c.sprintEnabled;
             case "speed" -> c.speedEnabled;

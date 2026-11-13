@@ -1,6 +1,7 @@
 package com.biwer.biwervisuals;
 
 import com.google.gson.Gson;
+import com.biwer.biwervisuals.discord.DiscordRPC;
 import com.google.gson.GsonBuilder;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
@@ -87,7 +88,7 @@ public class BiwerVisualsClient implements ClientModInitializer {
 
         AutoTotem.init();
 
-        //DiscordRPC.init();
+        DiscordRPC.init();
 
         // 4. Загрузка биндов из конфига при старте
         for (Map.Entry<String, Integer> entry : CONFIG.binds.entrySet()) {

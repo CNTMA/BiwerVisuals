@@ -105,7 +105,9 @@ public class JumpCircles {
                 float progress = (now - circle.start) / (float) LIFE_MS;
                 if (progress < 0.0f || progress > 1.0f) continue;
 
-                int alpha = (int) ((1.0f - progress) * 235.0f);
+                float strength = VisualEffects.strength("JumpCircles");
+                float fade = 1f - Math.clamp((progress - 0.62f) / 0.38f, 0f, 1f);
+                int alpha = Math.round(255f * Math.min(1f, strength * 1.65f) * fade);
                 if (alpha < 4) continue;
 
                 float radius = 0.35f + progress * 1.10f;
@@ -113,9 +115,13 @@ public class JumpCircles {
                 Vec3 center = new Vec3(circle.x, circle.y + 0.03, circle.z);
 
                 Gizmos.circle(center, radius, GizmoStyle.strokeAndFill(
-                        white(alpha),
-                        2.5f,
-                        white(alpha / 3)
+                        ((alpha * 3 / 4) << 24) | 0x101928, 6f, 0));
+                Gizmos.circle(center, radius * 0.77f, GizmoStyle.stroke(
+                        ((alpha / 2) << 24) | VisualEffects.tint("JumpCircles", progress * 5 + 2)));
+                Gizmos.circle(center, radius, GizmoStyle.strokeAndFill(
+                        (alpha << 24) | VisualEffects.tint("JumpCircles", progress * 5),
+                        3.5f,
+                        ((alpha / 3) << 24) | VisualEffects.tint("JumpCircles", progress * 5 + 2)
                 ));
             }
         } catch (IllegalStateException exception) {

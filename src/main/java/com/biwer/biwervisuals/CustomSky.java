@@ -51,7 +51,9 @@ public class CustomSky {
 
     private static void apply(SkyRenderState sky) {
         if (sky == null) return;
-        if (!BiwerVisualsClient.CONFIG.customSkyEnabled) return;
+        if (!BiwerVisualsClient.CONFIG.customSkyEnabled
+                && !VisualEffects.enabled("AuroraSky") && !VisualEffects.enabled("GalaxySky")
+                && !VisualEffects.enabled("SkyChanger")) return;
 
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null || mc.player == null) return;
@@ -60,7 +62,8 @@ public class CustomSky {
         float speed = Math.max(0.05f, BiwerVisualsClient.CONFIG.skySpeed / 100.0f);
         float phase = ((System.currentTimeMillis() % 3_600_000L) / 1000.0f) * speed;
 
-        int mode = BiwerVisualsClient.CONFIG.skyMode;
+        int mode = VisualEffects.enabled("GalaxySky") ? 2 : VisualEffects.enabled("AuroraSky") ? 1
+                : VisualEffects.enabled("SkyChanger") ? 0 : BiwerVisualsClient.CONFIG.skyMode;
         int color = switch (mode) {
             case 0 -> breathe(0xFF8A4B, 0xC2185B, phase);
             case 1 -> breathe(0x0B3D4A, 0x0FA36B, phase);
@@ -69,13 +72,17 @@ public class CustomSky {
             default -> hsv((phase * 40.0f) % 360.0f, 0.55f, 0.80f);
         };
 
-        sky.skyColor = color;
+        String effect = VisualEffects.enabled("GalaxySky") ? "GalaxySky" : VisualEffects.enabled("AuroraSky")
+                ? "AuroraSky" : VisualEffects.enabled("SkyChanger") ? "SkyChanger" : "CustomSky";
+        float strength = VisualEffects.strength(effect);
+        color = VisualEffects.blend(color, VisualEffects.tint(effect, phase), 0.25f);
+        sky.skyColor = VisualEffects.blend(sky.skyColor, color, strength);
 
         float stars = BiwerVisualsClient.CONFIG.skyStars / 100.0f;
         if (mode == 2) stars = Math.max(stars, 0.85f);
-        sky.starBrightness = Math.max(0.0f, Math.min(1.0f, stars));
+        sky.starBrightness += (Math.clamp(stars, 0f, 1f) - sky.starBrightness) * strength;
 
-        if (mode == 0) {
+        if (mode == 0 && strength > 0.25f) {
             // Тёплый горизонт: подкрашиваем ванильный закатный «веер»
             sky.sunriseAndSunsetColor = 0xFFB36B;
         }
@@ -86,8 +93,11 @@ public class CustomSky {
     private static void renderAurora(LevelRenderContext context) {
         if (gizmoFailed) return;
         if (context == null || context.levelState() == null) return;
-        if (!BiwerVisualsClient.CONFIG.customSkyEnabled) return;
-        if (!BiwerVisualsClient.CONFIG.auroraEnabled) return;
+        if (!BiwerVisualsClient.CONFIG.customSkyEnabled
+                && !VisualEffects.enabled("AuroraSky") && !VisualEffects.enabled("GalaxySky")
+                && !VisualEffects.enabled("SkyChanger")) return;
+        if (!VisualEffects.enabled("AuroraSky")
+                && !(BiwerVisualsClient.CONFIG.customSkyEnabled && BiwerVisualsClient.CONFIG.auroraEnabled)) return;
 
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null || mc.player == null) return;
@@ -96,7 +106,8 @@ public class CustomSky {
         CameraRenderState camera = context.levelState().cameraRenderState;
         if (camera == null || !camera.initialized) return;
 
-        float intensity = clamp01(BiwerVisualsClient.CONFIG.auroraBrightness / 100.0f);
+        float intensity = clamp01(BiwerVisualsClient.CONFIG.auroraBrightness / 100.0f)
+                * VisualEffects.strength(VisualEffects.enabled("AuroraSky") ? "AuroraSky" : "CustomSky");
         if (intensity < 0.02f) return;
 
         // Радиус подбираем по дальней плоскости, чтобы занавес не срезался фрустумом.
@@ -107,8 +118,10 @@ public class CustomSky {
         // Волны сияния ускоряются тем же ползунком «Скорость», что и палитра неба.
         float speed = 0.25f + clamp01(BiwerVisualsClient.CONFIG.skySpeed / 100.0f) * 1.75f;
 
-        int bottomColor = BiwerVisualsClient.CONFIG.auroraColorBottom & 0xFFFFFF;
-        int topColor = BiwerVisualsClient.CONFIG.auroraColorTop & 0xFFFFFF;
+        int bottomColor = VisualEffects.enabled("AuroraSky") ? VisualEffects.tint("AuroraSky", time)
+                : BiwerVisualsClient.CONFIG.auroraColorBottom & 0xFFFFFF;
+        int topColor = VisualEffects.enabled("AuroraSky") ? VisualEffects.tint("AuroraSky", time + 2)
+                : BiwerVisualsClient.CONFIG.auroraColorTop & 0xFFFFFF;
 
         try {
             for (int band = 0; band < AURORA_BANDS; band++) {

@@ -100,6 +100,13 @@ public class ModConfig {
     public float strafeRange = 1.0f;
 
     // --- CustomSky ---
+    public java.util.Map<String, Float> visualStrength = new java.util.LinkedHashMap<>();
+    public java.util.Map<String, Integer> visualPalette = new java.util.LinkedHashMap<>();
+    public int targetTexture = 2;
+    public float targetSize = 0.5f;
+    public int targetColor = 0xC58AFF;
+    public boolean targetAnimatedColor = true;
+    public java.util.Set<String> visualEffects = new java.util.LinkedHashSet<>();
     public boolean customSkyEnabled = false;
     public boolean customSkyCollapsed = true;
     public int skyMode = 0;

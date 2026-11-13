@@ -5,7 +5,7 @@
 	"compatibilityLevel": "JAVA_21",
 	"mixins": [],
 	"client": [
-		"ClientClockManagerMixin",
+		"LoadingStyleMixin", "ClientClockManagerMixin",
 		"LevelMixin",
 		"HeldItemRendererMixin",
 		"VelocityMixin",

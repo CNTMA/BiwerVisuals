@@ -66,6 +66,9 @@ public class Aura {
             pitchVelocity = 0.0f;
             return;
         }
+        if (target != picked) {
+            yawVelocity = pitchVelocity = 0f;
+        }
         target = picked;
 
         Vec3 aim = CombatUtil.aimPoint(player, picked);
@@ -155,15 +158,18 @@ public class Aura {
         float smooth = CombatUtil.clamp(BiwerVisualsClient.CONFIG.auraSmooth / 100.0f, 0.05f, 1.0f);
         float maxStep = Math.max(0.5f, BiwerVisualsClient.CONFIG.auraSpeed * scale);
 
-        float wantedYaw = limit(deltaYaw * smooth, maxStep);
-        float wantedPitch = limit(deltaPitch * smooth, maxStep * 0.7f);
+        float response = 0.08f + (1f - smooth) * 0.32f;
+        float wantedYaw = limit(deltaYaw * response, maxStep);
+        float wantedPitch = limit(deltaPitch * response, maxStep * 0.7f);
 
         float accel = Math.max(0.35f, maxStep * 0.25f);
         yawVelocity = approach(yawVelocity, wantedYaw, accel);
         pitchVelocity = approach(pitchVelocity, wantedPitch, accel * 0.7f);
 
-        float stepYaw = limit(yawVelocity, Math.abs(deltaYaw));
-        float stepPitch = limit(pitchVelocity, Math.abs(deltaPitch));
+        float stepYaw = Math.signum(yawVelocity) == Math.signum(deltaYaw)
+                ? limit(yawVelocity, Math.abs(deltaYaw)) : 0f;
+        float stepPitch = Math.signum(pitchVelocity) == Math.signum(deltaPitch)
+                ? limit(pitchVelocity, Math.abs(deltaPitch)) : 0f;
 
         player.setYRot(player.getYRot() + stepYaw);
         player.setXRot(CombatUtil.clamp(player.getXRot() + stepPitch, -90.0f, 90.0f));

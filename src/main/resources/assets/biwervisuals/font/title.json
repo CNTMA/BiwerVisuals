@@ -1,0 +1,16 @@
+{
+  "providers": [
+    {
+      "type": "ttf",
+      "file": "biwervisuals:inter.ttf",
+      "shift": [0, 0],
+      "size": 27,
+      "oversample": 2
+    },
+    {
+      "type": "reference",
+      "id": "minecraft:default"
+    }
+  ]
+}
+

@@ -284,7 +284,7 @@ public class Hud implements HudElement {
 
         int width = 4 + count * 18;
         int height = 22;
-        g.fill(x, y, x + width, y + height, 0x90000000);
+        g.fill(x, y, x + width, y + height, 0xDC111B2D);
 
         int index = 0;
         for (net.minecraft.world.entity.EquipmentSlot slot : slots) {
@@ -305,7 +305,7 @@ public class Hud implements HudElement {
 
         int width = 4 + 9 * 18;
         int height = 22;
-        g.fill(x, y, x + width, y + height, 0x90000000);
+        g.fill(x, y, x + width, y + height, 0xDC111B2D);
 
         for (int i = 0; i < 9; i++) {
             net.minecraft.world.item.ItemStack stack = mc.player.getInventory().getItem(i);
@@ -343,7 +343,7 @@ public class Hud implements HudElement {
         width += 8;
         int height = lines.length * 10 + 4;
 
-        g.fill(x - 2, y - 2, x + width + 2, y + height + 2, 0x90000000);
+        g.fill(x - 2, y - 2, x + width + 2, y + height + 2, 0xDC111B2D);
         int lineY = y;
         for (String line : lines) {
             g.text(mc.font, line, x + 2, lineY, 0xFFFFFFFF, false);
@@ -380,7 +380,7 @@ public class Hud implements HudElement {
         width += 5;
         int height = 4 + active.size() * 12;
 
-        g.fill(x - 2, y - 2, x + width + 2, y + height + 2, 0x90000000);
+        g.fill(x - 2, y - 2, x + width + 2, y + height + 2, 0xDC111B2D);
         int rowY = y;
         for (net.minecraft.world.item.ItemStack stack : active) {
             int percent = Math.round(mc.player.getCooldowns().getCooldownPercent(stack, 0.0f) * 100.0f);
@@ -396,10 +396,18 @@ public class Hud implements HudElement {
         String a = "Biwer";
         String b = "Visuals";
         String c = " v1.0.0";
+        hudPanel(g, x - 3, y - 3, font.width(a + b + c) + 6, font.lineHeight + 6);
         g.text(font, a, x, y, 0xFF39D0FF, true);
         g.text(font, b, x + font.width(a), y, 0xFFFFFFFF, true);
-        g.text(font, c, x + font.width(a) + font.width(b), y, 0xFF888888, true);
+        g.text(font, c, x + font.width(a) + font.width(b), y, 0xFFBBCBE3, true);
         return new int[]{font.width(a + b + c), font.lineHeight};
+    }
+
+    private static void hudPanel(GuiGraphicsExtractor g, int x, int y, int width, int height) {
+        g.fillGradient(x + 1, y, x + width - 1, y + height, 0xF3233855, 0xED101A2B);
+        g.fill(x, y + 1, x + 1, y + height - 1, 0xDC18263D);
+        g.fill(x + width - 1, y + 1, x + width, y + height - 1, 0xDC18263D);
+        g.fill(x + 2, y, x + width - 2, y + 1, 0xB773DCEC);
     }
 
     private static int[] binds(GuiGraphicsExtractor g, Minecraft mc, int x, int y, boolean editor) {
@@ -471,7 +479,10 @@ public class Hud implements HudElement {
             String name = modules.get(i);
             int lineWidth = font.width(name);
             width = Math.max(width, lineWidth);
-            g.text(font, name, x - lineWidth, y + i * LINE, 0xFF6FE3FF, true);
+            int rowY = y + i * LINE;
+            g.fill(x - lineWidth - 4, rowY - 1, x + 3, rowY + LINE - 1, 0xDC111B2D);
+            g.fill(x + 2, rowY - 1, x + 3, rowY + LINE - 1, 0xFF70DEEB);
+            g.text(font, name, x - lineWidth, rowY, 0xFF6FE3FF, true);
         }
         return new int[]{width, modules.size() * LINE};
     }
@@ -484,6 +495,7 @@ public class Hud implements HudElement {
                 + "  Z: " + (int) Math.floor(player.getZ());
         String line2 = "FPS: " + mc.getFps();
 
+        hudPanel(g, x - 3, y - 3, Math.max(font.width(line1), font.width(line2)) + 6, LINE * 2 + 4);
         g.text(font, line1, x, y, 0xFFFFFFFF, true);
         g.text(font, line2, x, y + LINE, 0xFFAAAAAA, true);
         return new int[]{Math.max(font.width(line1), font.width(line2)), LINE * 2};
@@ -493,7 +505,7 @@ public class Hud implements HudElement {
         int size = 64;
         int border = 0xFF39A7FF;
 
-        g.fill(x, y, x + size, y + size, 0x80101018);
+        g.fill(x, y, x + size, y + size, 0xD8111B2D);
         g.fill(x, y, x + size, y + 1, border);
         g.fill(x, y + size - 1, x + size, y + size, border);
         g.fill(x, y, x + 1, y + size, border);
@@ -548,16 +560,16 @@ public class Hud implements HudElement {
         float maxHealth = Math.max(1.0f, target.getMaxHealth());
         float ratio = Math.max(0.0f, Math.min(1.0f, health / maxHealth));
 
-        g.fill(x, y, x + width, y + 22, 0xA0101018);
-        g.text(font, name, x + 3, y + 3, 0xFFFFFFFF, true);
+        hudPanel(g, x, y, width, 25);
+        g.text(font, font.plainSubstrByWidth(name, width - 12), x + 6, y + 5, 0xFFFFFFFF, true);
 
-        int barTop = y + 14;
-        g.fill(x + 3, barTop, x + width - 3, barTop + 5, 0xFF331111);
-        int filled = (int) ((width - 6) * ratio);
+        int barTop = y + 16;
+        g.fill(x + 6, barTop, x + width - 6, barTop + 5, 0xFF2A374E);
+        int filled = (int) ((width - 12) * ratio);
         int barColor = ratio > 0.5f ? 0xFF55FF55 : (ratio > 0.25f ? 0xFFFFD24A : 0xFFFF5555);
-        g.fill(x + 3, barTop, x + 3 + filled, barTop + 5, barColor);
+        g.fill(x + 6, barTop, x + 6 + filled, barTop + 5, barColor);
 
-        return new int[]{width, 22};
+        return new int[]{width, 25};
     }
 
     // ================= Вспомогательное =================

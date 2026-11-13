@@ -6,6 +6,9 @@ import net.minecraft.client.input.CharacterEvent;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.FontDescription;
+import net.minecraft.network.chat.Style;
+import net.minecraft.resources.Identifier;
 import org.lwjgl.glfw.GLFW;
 import org.joml.Matrix3x2fStack;
 
@@ -18,20 +21,38 @@ import java.util.function.IntConsumer;
 public class ClickGuiScreen extends Screen {
     private final Screen parent;
 
-    private final int moduleBg = 0xCC14141F;
-    private final int activeColor = 0xFFAB9FF2;
+    private static final int CARD_HEIGHT = 42;
+    private static final List<String> VISUAL_CATALOG = List.of(
+            "CustomSky", "SkyChanger", "Fog", "CustomFog", "VolumetricFog",
+            "CloudChanger", "AuroraSky", "GalaxySky", "WeatherChanger", "WorldColor",
+            "CustomShaders", "Bloom", "MotionBlur", "DepthOfField", "LensFlare",
+            "GodRays", "Vignette", "ChromaticAberration", "JumpCircles", "JumpParticles",
+            "LandingCircle", "MotionTrail", "HitParticles", "DamageIndicator", "HitMarker",
+            "TargetESP", "PlayerESP", "CrystalESP", "ItemESP", "Tracers",
+            "ChinaHat", "PlayerGlow", "PlayerChams", "CustomCape", "AmbientParticles",
+            "Fireflies", "SnowParticles", "DynamicLights", "ItemPhysics", "TotemAnimation");
+    private static final Style MENU_FONT = Style.EMPTY.withFont(
+            new FontDescription.Resource(Identifier.fromNamespaceAndPath("biwervisuals", "title")));
+    private final int activeColor = 0xFFC5A1FF;
     private final int textColor = 0xFFFFFFFF;
-    private final int textMuted = 0xFF8888AA;
-    private final int sliderBg = 0xFF333333;
+    private final int textMuted = 0xFFB8ACC9;
+    private final int sliderBg = 0xFF30233F;
 
     private String searchQuery = "";
+    private Category selected;
+    private int contentLeft, contentTop, contentRight, contentBottom;
+    private int scroll, maxScroll;
+    private boolean searchFocused;
     private final List<Category> categories = new ArrayList<>();
     private SettingEntry draggingSetting = null;
 
-    // Анимация открытия/закрытия (твои настройки)
-    private float openAnim = 0.0f;
-    private float targetAnim = 1.0f;
-    private boolean closing = false;
+    private float openAnim;
+    private float tabAnim = 1f;
+    private float displayedScroll;
+    private long lastFrame = System.nanoTime();
+    private boolean closing;
+    private record ClickRipple(float x, float y, long start) {}
+    private final java.util.ArrayDeque<ClickRipple> ripples = new java.util.ArrayDeque<>();
 
     private static class Category {
         String name;
@@ -43,10 +64,12 @@ public class ClickGuiScreen extends Screen {
     private static class ModuleEntry {
         String name;
         boolean enabled;
+        boolean available = true;
         boolean expanded = false;
-        int x, y, width, height = 16;
+        int x, y, width, height = CARD_HEIGHT;
         float animState = 0.0f;
-        float expandAnim = 0.0f;
+        int settingsBottom;
+        float expansion;
         List<SettingEntry> settings = new ArrayList<>();
         List<BooleanSetting> booleans = new ArrayList<>();
         List<ModeSetting> modes = new ArrayList<>();
@@ -55,6 +78,7 @@ public class ClickGuiScreen extends Screen {
         ModuleEntry(String name, boolean enabled) {
             this.name = name;
             this.enabled = enabled;
+            this.animState = enabled ? 1f : 0f;
         }
     }
 
@@ -127,7 +151,7 @@ public class ClickGuiScreen extends Screen {
         int x, y, width, height = 12;
         IntConsumer onChange;
         BooleanSupplier visible;
-        boolean open = false;
+
 
         ColorSetting(String name, int color, IntConsumer onChange) {
             this(name, color, onChange, () -> true);
@@ -145,6 +169,8 @@ public class ClickGuiScreen extends Screen {
         super(Component.literal("Biwer Visuals"));
         this.parent = parent;
         initModules();
+        MenuSounds.play("ClickGuiOpen");
+        selected = categories.getFirst();
     }
 
     private void initModules() {
@@ -208,10 +234,10 @@ public class ClickGuiScreen extends Screen {
         targetStrafe.booleans.add(new BooleanSetting("Авто-прыжок", BiwerVisualsClient.CONFIG.strafeAutoJump, v -> BiwerVisualsClient.CONFIG.strafeAutoJump = v));
         movement.modules.add(targetStrafe);
 
-        categories.add(movement);
+
 
         // ================= RENDER =================
-        Category render = new Category("Render");
+        Category render = new Category("Visuals");
 
         ModuleEntry ambience = new ModuleEntry("Ambience", BiwerVisualsClient.CONFIG.ambienceEnabled);
         ambience.modes.add(new ModeSetting("Время", new String[]{"Реальное", "Рассвет", "День", "Ночь", "Полночь"}, BiwerVisualsClient.CONFIG.activeTimeButton, v -> BiwerVisualsClient.CONFIG.activeTimeButton = v));
@@ -262,7 +288,26 @@ public class ClickGuiScreen extends Screen {
         chinaHat.booleans.add(new BooleanSetting("На друзей", BiwerVisualsClient.CONFIG.chinaHatFriends, v -> BiwerVisualsClient.CONFIG.chinaHatFriends = v));
         chinaHat.booleans.add(new BooleanSetting("На всех", BiwerVisualsClient.CONFIG.chinaHatAll, v -> BiwerVisualsClient.CONFIG.chinaHatAll = v));
         chinaHat.colors.add(new ColorSetting("Цвет шляпы", BiwerVisualsClient.CONFIG.chinaHatColor, v -> BiwerVisualsClient.CONFIG.chinaHatColor = v));
+        for (VisualEffects.Effect effect : VisualEffects.Effect.values()) {
+            ModuleEntry entry = new ModuleEntry(effect.name(), VisualEffects.enabled(effect.name()));
+            render.modules.add(entry);
+        }
+
+        chinaHat.available = false;
         render.modules.add(chinaHat);
+
+        List<ModuleEntry> existingVisuals = List.copyOf(render.modules);
+        render.modules.clear();
+        for (String name : VISUAL_CATALOG) {
+            ModuleEntry entry = existingVisuals.stream().filter(module -> module.name.equals(name))
+                    .findFirst().orElseGet(() -> new ModuleEntry(name, false));
+            if (!existingVisuals.contains(entry)) entry.available = false;
+            if (entry.available) addVisualSettings(entry);
+            render.modules.add(entry);
+        }
+        for (ModuleEntry module : existingVisuals) {
+            if (!VISUAL_CATALOG.contains(module.name)) render.modules.add(module);
+        }
 
         categories.add(render);
 
@@ -272,7 +317,7 @@ public class ClickGuiScreen extends Screen {
         autoTotem.settings.add(new SettingEntry("Задержка", (BiwerVisualsClient.CONFIG.autoTotemDelay - 1f) / 19f, v -> BiwerVisualsClient.CONFIG.autoTotemDelay = 1 + (int)(v * 19f)));
         player.modules.add(autoTotem);
         player.modules.add(new ModuleEntry("HUD", BiwerVisualsClient.CONFIG.hudEnabled));
-        categories.add(player);
+
 
         // ================= MISC =================
         Category misc = new Category("Misc");
@@ -299,189 +344,340 @@ public class ClickGuiScreen extends Screen {
 
         misc.modules.add(new ModuleEntry("SeeInvisibles", BiwerVisualsClient.CONFIG.seeInvisiblesEnabled));
         categories.add(misc);
+        categories.add(player);
+        categories.add(movement);
     }
 
     @Override
     public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float delta) {
-        // Анимация окна (твои настройки)
-        if (closing) targetAnim = 0.0f;
-        openAnim += (targetAnim - openAnim) * 0.5f * delta;
+        long now = System.nanoTime();
+        float seconds = Math.min(0.05f, (now - lastFrame) / 1_000_000_000f);
+        lastFrame = now;
+        openAnim = approach(openAnim, closing ? 0f : 1f, seconds, 20f);
+        tabAnim = approach(tabAnim, 1f, seconds, 20f);
         if (closing && openAnim < 0.05f) {
-            openAnim = 0.0f;
-            if (this.minecraft != null) this.minecraft.setScreen(this.parent);
+            this.minecraft.setScreen(parent);
             return;
         }
+        graphics.fillGradient(0, 0, width, height, (Math.round(74 * openAnim) << 24) | 0x170B29, (Math.round(117 * openAnim) << 24) | 0x10091D);
+        int panelWidth = Math.min(width - 12, Math.max(340, width * 64 / 100));
+        int panelHeight = Math.min(height - 12, Math.max(170, height * 64 / 100));
+        int left = (width - panelWidth) / 2;
+        int top = (height - panelHeight) / 2 + Math.round((1f - openAnim) * 14);
+        int sidebar = Math.min(150, Math.max(94, panelWidth * 28 / 100));
+        contentLeft = left + sidebar + 10;
+        contentRight = left + panelWidth - 10;
+        contentTop = top + 30;
+        contentBottom = top + panelHeight - 10;
 
-        int colWidth = 120, gap = 6;
-        int totalWidth = (colWidth * categories.size()) + (gap * (categories.size() - 1));
-        int startX = (this.width - totalWidth) / 2, startY = 40;
+        glass(graphics, left, top, panelWidth, panelHeight, 20, 0xC2181026);
+        glass(graphics, left, top, sidebar, panelHeight, 20, 0xCF231735);
+        drawRoundedRect(graphics, left + 8, top + 8, 24, 24, 12, 0xFF7345AE);
+        graphics.blit(Identifier.fromNamespaceAndPath("biwervisuals", "textures/menu/logo.png"),
+                left + 13, top + 13, left + 27, top + 27, 0f, 1f, 0f, 1f);
+        label(graphics, "BiwerVisuals", left + 37, top + 16, 1f, textColor);
 
-        graphics.fill(0, 0, this.width, this.height, (int)(0x88 * openAnim) << 24);
-
-        // Плавное появление
-        Matrix3x2fStack pose = graphics.pose();
-        pose.pushMatrix();
-        float scale = 0.85f + 0.15f * openAnim;
-        pose.translate(this.width / 2f, this.height / 2f);
-        pose.scale(scale, scale);
-        pose.translate(-this.width / 2f, -this.height / 2f);
-
-        // Поиск
-        drawRoundedRect(graphics, (this.width - 220) / 2, 10, 220, 20, 4, moduleBg);
-        graphics.text(this.font, "Поиск: " + searchQuery, (this.width - 220) / 2 + 6, 16, textColor, false);
-
-        // Колонки
-        int currentX = startX;
-        for (Category cat : categories) {
-            cat.x = currentX; cat.y = startY; cat.width = colWidth;
-            renderCategory(graphics, cat, mouseX, mouseY, delta);
-            currentX += colWidth + gap;
+        int rowHeight = Math.min(30, (panelHeight - 48) / categories.size());
+        String[] symbols = {"⚔", "◉", "△", "♙", "➜"};
+        for (int i = 0; i < categories.size(); i++) {
+            Category cat = categories.get(i);
+            cat.x = left + 7;
+            cat.y = top + 43 + i * rowHeight;
+            cat.width = sidebar - 14;
+            if (cat == selected || inside(mouseX, mouseY, cat.x, cat.y, cat.width, rowHeight - 2)) {
+                drawRoundedRect(graphics, cat.x, cat.y, cat.width, rowHeight - 2, 6,
+                        cat == selected ? 0xC65E3B88 : 0x70402B59);
+            }
+            int textY = cat.y + Math.max(2, (rowHeight - 11) / 2);
+            label(graphics, symbols[i], cat.x + 5, textY, 1.2f, activeColor);
+            label(graphics, cat.name, cat.x + 23, textY, 1.2f, textColor);
         }
 
-        pose.popMatrix();
-        super.extractRenderState(graphics, mouseX, mouseY, delta);
+        int searchWidth = contentRight - contentLeft;
+        drawRoundedRect(graphics, contentLeft, top + 8, searchWidth, 15, 5,
+                searchFocused ? 0xFF43305F : 0xFF1D142C);
+        String query = searchQuery.isEmpty() ? "Поиск модулей" : searchQuery;
+        text(graphics, fit(query, searchWidth - 12), contentLeft + 6, top + 12, textMuted);
+
+        List<ModuleEntry> modules = selected.modules.stream().filter(this::matchesSearch).toList();
+        int columns = searchWidth >= 200 ? 2 : 1;
+        int cardWidth = (searchWidth - 8 * (columns - 1)) / columns;
+        for (ModuleEntry module : modules) {
+            module.expansion = approach(module.expansion, module.expanded ? 1f : 0f, seconds, 22f);
+        }
+        int totalHeight = 0;
+        for (int i = 0; i < modules.size(); i += columns) {
+            int row = CARD_HEIGHT;
+            for (int j = i; j < Math.min(i + columns, modules.size()); j++) {
+                row = Math.max(row, CARD_HEIGHT + settingsHeight(modules.get(j)));
+            }
+            totalHeight += row + 8;
+        }
+        maxScroll = Math.max(0, totalHeight - 8 - (contentBottom - contentTop));
+        scroll = Math.min(scroll, maxScroll);
+        graphics.enableScissor(contentLeft, contentTop, contentRight, contentBottom);
+        displayedScroll = approach(displayedScroll, scroll, seconds, 24f);
+        displayedScroll = Math.min(displayedScroll, maxScroll);
+        int y = contentTop - Math.round(displayedScroll) + Math.round((1f - tabAnim) * 10);
+        for (int i = 0; i < modules.size(); i += columns) {
+            int row = CARD_HEIGHT;
+            for (int j = i; j < Math.min(i + columns, modules.size()); j++) {
+                ModuleEntry module = modules.get(j);
+                module.x = contentLeft + (j - i) * (cardWidth + 8);
+                module.y = y;
+                module.width = cardWidth;
+                int height = CARD_HEIGHT + settingsHeight(module);
+                module.settingsBottom = y + height;
+                row = Math.max(row, height);
+                if (y + height > contentTop && y < contentBottom) renderModule(graphics, module, seconds);
+            }
+            y += row + 8;
+        }
+        graphics.disableScissor();
+        long rippleTime = System.nanoTime();
+        ripples.removeIf(ripple -> rippleTime - ripple.start() > 400_000_000L);
+        for (ClickRipple ripple : ripples) {
+            float progress = (rippleTime - ripple.start()) / 400_000_000f;
+            int radius = Math.round(3 + 15 * (1 - (1 - progress) * (1 - progress)));
+            int color = (Math.round(55 * (1 - progress)) << 24) | 0xD4B5FF;
+            drawRoundedRect(graphics, Math.round(ripple.x()) - radius, Math.round(ripple.y()) - radius,
+                    radius * 2, radius * 2, radius, color);
+        }
+        if (modules.isEmpty()) text(graphics, "Модули не найдены", contentLeft + 5, contentTop + 6, textMuted);
     }
 
-    private void renderCategory(GuiGraphicsExtractor graphics, Category cat, int mouseX, int mouseY, float delta) {
-        drawRoundedRect(graphics, cat.x, cat.y, cat.width, 18, 4, moduleBg);
-        graphics.text(this.font, cat.name, cat.x + 6, cat.y + 5, activeColor, false);
+    private void addVisualSettings(ModuleEntry entry) {
+        String name = entry.name;
+        if (name.equals("TargetESP")) {
+            entry.modes.add(new ModeSetting("Текстура", new String[]{"Soft", "Cross", "Cube", "Capture", "Diamond", "Delta"},
+                    Math.clamp(BiwerVisualsClient.CONFIG.targetTexture, 0, 5),
+                    v -> BiwerVisualsClient.CONFIG.targetTexture = v));
+            entry.settings.add(new SettingEntry("Размер", BiwerVisualsClient.CONFIG.targetSize,
+                    v -> BiwerVisualsClient.CONFIG.targetSize = v));
+            entry.booleans.add(new BooleanSetting("Перелив цвета", BiwerVisualsClient.CONFIG.targetAnimatedColor,
+                    v -> BiwerVisualsClient.CONFIG.targetAnimatedColor = v));
+            entry.colors.add(new ColorSetting("Цвет", BiwerVisualsClient.CONFIG.targetColor,
+                    v -> BiwerVisualsClient.CONFIG.targetColor = v));
+        }
+        if (name.equals("WeatherChanger")) {
+            entry.modes.add(new ModeSetting("Погода", new String[]{"Ясно", "Дождь", "Гроза"},
+                    BiwerVisualsClient.CONFIG.visualPalette.getOrDefault(name, 1),
+                    value -> BiwerVisualsClient.CONFIG.visualPalette.put(name, value)));
+            entry.settings.add(new SettingEntry("Сила осадков", VisualEffects.strength(name),
+                    value -> BiwerVisualsClient.CONFIG.visualStrength.put(name, value)));
+            return;
+        }
+        entry.settings.add(new SettingEntry("Интенсивность", VisualEffects.strength(name),
+                value -> BiwerVisualsClient.CONFIG.visualStrength.put(name, value)));
+        entry.modes.add(new ModeSetting("Палитра", new String[]{"Северное сияние", "Неон", "Закат", "Лёд"},
+                BiwerVisualsClient.CONFIG.visualPalette.getOrDefault(name, 0),
+                value -> BiwerVisualsClient.CONFIG.visualPalette.put(name, value)));
+    }
 
-        int moduleY = cat.y + 24;
-        for (ModuleEntry module : cat.modules) {
-            if (!searchQuery.isEmpty() && !module.name.toLowerCase().contains(searchQuery.toLowerCase())) continue;
+    private boolean matchesSearch(ModuleEntry module) {
+        return module.name.toLowerCase(java.util.Locale.ROOT).contains(searchQuery.toLowerCase(java.util.Locale.ROOT));
+    }
 
-            module.x = cat.x + 2; module.y = moduleY; module.width = cat.width - 4;
+    private int settingsHeight(ModuleEntry module) {
+        if (module.expansion == 0f) return 0;
+        int height = 4;
+        for (SettingEntry s : module.settings) if (s.visible.getAsBoolean()) height += 16;
+        for (BooleanSetting b : module.booleans) if (b.visible.getAsBoolean()) height += 14;
+        for (ModeSetting m : module.modes) if (m.visible.getAsBoolean()) height += 14;
+        for (ColorSetting c : module.colors) if (c.visible.getAsBoolean()) height += 14;
+        return Math.round(height * module.expansion);
+    }
 
-            float smoothDelta = Math.min(delta, 0.1f);
-            module.animState += ((module.enabled ? 1f : 0f) - module.animState) * 0.5f * smoothDelta;
-            module.expandAnim += ((module.expanded ? 1f : 0f) - module.expandAnim) * 0.5f * smoothDelta;
+    private void renderModule(GuiGraphicsExtractor graphics, ModuleEntry module, float seconds) {
+        glass(graphics, module.x, module.y, module.width, module.settingsBottom - module.y, 8, 0xAE302245);
+        module.animState = approach(module.animState, module.enabled ? 1f : 0f, seconds, 24f);
+        if (!module.available) {
+            label(graphics, fit(module.name, (module.width - 16) * 5 / 7),
+                    module.x + 8, module.y + 9, 1.4f, textMuted);
+            text(graphics, "Не реализовано", module.x + 8, module.y + 26, textMuted);
+            return;
+        }
+        int toggleX = module.x + module.width - 36;
+        int toggleY = module.y + 8;
+        drawRoundedRect(graphics, toggleX, toggleY, 29, 12, 6, module.enabled ? 0xFF9B6CE2 : 0xFF4B3A60);
+        drawRoundedRect(graphics, toggleX + 1 + Math.round(12 * module.animState), toggleY + 1, 15, 10, 5, textColor);
+        label(graphics, fit(module.name, (module.width - 48) * 5 / 7),
+                module.x + 8, module.y + 9, 1.4f, textColor);
+        if (!module.settings.isEmpty() || !module.booleans.isEmpty() || !module.modes.isEmpty() || !module.colors.isEmpty()) {
+            text(graphics, module.expanded ? "ПКМ · свернуть" : "ПКМ · настройки", module.x + 8, module.y + 26, textMuted);
+        }
 
-            // Рисуем сам модуль
-            drawRoundedRect(graphics, module.x, module.y, module.width, module.height, 3, module.enabled ? 0x33AB9FF2 : 0x22000000);
-            graphics.text(this.font, module.name, module.x + 6, module.y + 4, module.enabled ? activeColor : textMuted, false);
+        if (module.settingsBottom > module.y + CARD_HEIGHT) {
+            graphics.enableScissor(module.x, module.y + CARD_HEIGHT,
+                    module.x + module.width, module.settingsBottom);
+            int settingsY = module.y + module.height + 2;
 
-            // Тумблер
-            int toggleX = module.x + module.width - 16, toggleY = module.y + 4;
-            drawRoundedRect(graphics, toggleX, toggleY, 12, 8, 4, sliderBg);
-            drawRoundedRect(graphics, (int)(toggleX + 1 + (module.animState * 6)), toggleY + 1, 6, 6, 3, module.enabled ? activeColor : 0xFFFFFFFF);
-            graphics.text(this.font, module.expanded ? "v" : ">", toggleX - 10, module.y + 4, textMuted, false);
-
-            // === РИСУЕМ НАСТРОЙКИ С АНИМАЦИЕЙ ===
-            if (module.expandAnim > 0.01f) {
-                // Вычисляем полную высоту настроек (как будто они полностью раскрыты)
-                int fullSettingsHeight = 0;
-                for (SettingEntry s : module.settings) if (s.visible.getAsBoolean()) fullSettingsHeight += 16;
-                for (BooleanSetting b : module.booleans) if (b.visible.getAsBoolean()) fullSettingsHeight += 14;
-                for (ModeSetting m : module.modes) if (m.visible.getAsBoolean()) fullSettingsHeight += 14;
-                for (ColorSetting c : module.colors) if (c.visible.getAsBoolean()) fullSettingsHeight += 14;
-
-                // Текущая видимая высота (для Scissor)
-                int visibleHeight = (int) (fullSettingsHeight * module.expandAnim);
-
-                // Включаем Scissor: обрезаем всё, что ниже module.y + module.height + visibleHeight
-                // И не забываем про X-координаты (с запасом)
-                int scissorX = module.x - 2;
-                int scissorY = module.y + module.height;
-                int scissorW = module.width + 4;
-                int scissorH = visibleHeight + 2;
-
-                // Если высота > 0, включаем обрезку
-                if (scissorH > 0) {
-                    graphics.enableScissor(scissorX, scissorY, scissorX + scissorW, scissorY + scissorH);
-                }
-
-                int settingsY = module.y + module.height + 2;
-
-                for (SettingEntry s : module.settings) {
-                    if (!s.visible.getAsBoolean()) continue;
-                    s.x = module.x + 2; s.y = settingsY; s.width = module.width - 4;
-                    graphics.text(this.font, s.name, s.x + 2, s.y, textMuted, false);
-                    graphics.fill(s.x + 2, s.y + 8, s.x + s.width - 2, s.y + 11, sliderBg);
-                    graphics.fill(s.x + 2, s.y + 8, s.x + 2 + (int)((s.width - 4) * s.value), s.y + 11, activeColor);
-                    settingsY += 16;
-                }
-                for (BooleanSetting b : module.booleans) {
-                    if (!b.visible.getAsBoolean()) continue;
-                    b.x = module.x + 2; b.y = settingsY; b.width = module.width - 4;
-                    graphics.text(this.font, b.name, b.x + 2, b.y, textMuted, false);
-                    drawRoundedRect(graphics, b.x + b.width - 14, b.y - 1, 10, 10, 3, sliderBg);
-                    if (b.value) drawRoundedRect(graphics, b.x + b.width - 12, b.y + 1, 6, 6, 2, activeColor);
-                    settingsY += 14;
-                }
-                for (ModeSetting m : module.modes) {
-                    if (!m.visible.getAsBoolean()) continue;
-                    m.x = module.x + 2; m.y = settingsY; m.width = module.width - 4;
-                    graphics.text(this.font, m.name + ": " + m.current(), m.x + 2, m.y, activeColor, false);
-                    settingsY += 14;
-                }
-                for (ColorSetting c : module.colors) {
-                    if (!c.visible.getAsBoolean()) continue;
-                    c.x = module.x + 2; c.y = settingsY; c.width = module.width - 4;
-                    graphics.text(this.font, c.name, c.x + 2, c.y, textMuted, false);
-                    graphics.fill(c.x + c.width - 14, c.y - 1, c.x + c.width - 4, c.y + 9, 0xFF000000 | c.color);
-                    settingsY += 14;
-                }
-
-                // Выключаем Scissor
-                if (scissorH > 0) {
-                    graphics.disableScissor();
-                }
-
-                // Сдвиг для следующего модуля
-                moduleY += module.height + 2 + (int)(fullSettingsHeight * module.expandAnim);
-            } else {
-                // Если закрыт — просто сдвигаем на высоту модуля
-                moduleY += module.height + 2;
+            for (SettingEntry s : module.settings) {
+                if (!s.visible.getAsBoolean()) continue;
+                s.x = module.x + 2; s.y = settingsY; s.width = module.width - 4;
+                text(graphics, s.name, s.x + 2, s.y, textMuted);
+                graphics.fill(s.x + 2, s.y + 8, s.x + s.width - 2, s.y + 11, fade(sliderBg));
+                graphics.fill(s.x + 2, s.y + 8, s.x + 2 + (int)((s.width - 4) * s.value), s.y + 11, fade(activeColor));
+                settingsY += 16;
             }
+            for (BooleanSetting b : module.booleans) {
+                if (!b.visible.getAsBoolean()) continue;
+                b.x = module.x + 2; b.y = settingsY; b.width = module.width - 4;
+                text(graphics, b.name, b.x + 2, b.y, textMuted);
+                drawRoundedRect(graphics, b.x + b.width - 14, b.y - 1, 10, 10, 3, sliderBg);
+                if (b.value) drawRoundedRect(graphics, b.x + b.width - 12, b.y + 1, 6, 6, 2, activeColor);
+                settingsY += 14;
+            }
+            for (ModeSetting m : module.modes) {
+                if (!m.visible.getAsBoolean()) continue;
+                m.x = module.x + 2; m.y = settingsY; m.width = module.width - 4;
+                text(graphics, m.name + ": " + m.current(), m.x + 2, m.y, activeColor);
+                settingsY += 14;
+            }
+            for (ColorSetting c : module.colors) {
+                if (!c.visible.getAsBoolean()) continue;
+                c.x = module.x + 2; c.y = settingsY; c.width = module.width - 4;
+                text(graphics, c.name, c.x + 2, c.y, textMuted);
+                graphics.fill(c.x + c.width - 14, c.y - 1, c.x + c.width - 4, c.y + 9, fade(0xFF000000 | c.color));
+                settingsY += 14;
+            }
+            graphics.disableScissor();
+        }
+    }
+
+    private static float approach(float current, float target, float seconds, float rate) {
+        float next = target + (current - target) * (float) Math.exp(-rate * seconds);
+        return Math.abs(next - target) < 0.002f ? target : next;
+    }
+
+    private String fit(String value, int width) {
+        return AtlasFont.MEDIUM.fit(value, 10, width);
+    }
+
+    private void text(GuiGraphicsExtractor graphics, String value, int x, int y, int color) {
+        AtlasFont.MEDIUM.draw(graphics, value, x, y - 1, 10, fade(color));
+    }
+    private void label(GuiGraphicsExtractor graphics, String text, int x, int y, float scale, int color) {
+        Matrix3x2fStack pose = graphics.pose();
+        pose.pushMatrix();
+        pose.translate(x, y);
+        pose.scale(scale, scale);
+        text(graphics, text, 0, 0, color);
+        pose.popMatrix();
+    }
+
+    private void glass(GuiGraphicsExtractor graphics, int x, int y, int w, int h, int radius, int color) {
+        drawRoundedRect(graphics, x, y, w, h, radius, 0x805F457E);
+        drawRoundedRect(graphics, x + 1, y + 1, w - 2, h - 2, radius - 1, color);
+        // A narrow highlight and a broad translucent reflection follow the panel curvature.
+        int band = Math.min(9, h / 3);
+        for (int row = 1; row < band; row++) {
+            int inset = Math.max(2, radius - row);
+            int alpha = Math.round((1f - row / (float) band) * 22 * openAnim);
+            graphics.fill(x + inset, y + row, x + w - inset, y + row + 1,
+                    (alpha << 24) | 0xE3D5FF);
         }
     }
 
     private void drawRoundedRect(GuiGraphicsExtractor graphics, int x, int y, int w, int h, int r, int color) {
-        graphics.fill(x + r, y, x + w - r, y + h, color);
+        color = fade(color);
+        r = Math.min(r, Math.min(w, h) / 2);
         graphics.fill(x, y + r, x + w, y + h - r, color);
-        graphics.fill(x + 1, y + 1, x + r, y + r, color);
-        graphics.fill(x + w - r, y + 1, x + w - 1, y + r, color);
-        graphics.fill(x + 1, y + h - r, x + r, y + h - 1, color);
-        graphics.fill(x + w - r, y + h - r, x + w - 1, y + h - 1, color);
+        for (int row = 0; row < r; row++) {
+            double dy = r - row - 0.5;
+            double edge = r - Math.sqrt(r * r - dy * dy);
+            int inset = (int) Math.ceil(edge);
+            if (inset > 0) {
+                int rim = (Math.round((color >>> 24) * (float) (inset - edge)) << 24) | (color & 0xFFFFFF);
+                graphics.fill(x + inset - 1, y + row, x + inset, y + row + 1, rim);
+                graphics.fill(x + w - inset, y + row, x + w - inset + 1, y + row + 1, rim);
+                graphics.fill(x + inset - 1, y + h - row - 1, x + inset, y + h - row, rim);
+                graphics.fill(x + w - inset, y + h - row - 1, x + w - inset + 1, y + h - row, rim);
+            }
+            graphics.fill(x + inset, y + row, x + w - inset, y + row + 1, color);
+            graphics.fill(x + inset, y + h - row - 1, x + w - inset, y + h - row, color);
+        }
+    }
+
+    private int fade(int color) {
+        return (color & 0xFFFFFF) | (Math.round((color >>> 24) * openAnim) << 24);
+    }
+
+    private static boolean inside(double x, double y, int left, int top, int w, int h) {
+        return x >= left && x < left + w && y >= top && y < top + h;
+    }
+
+    @Override
+    public boolean mouseScrolled(double x, double y, double horizontal, double vertical) {
+        if (inside(x, y, contentLeft, contentTop, contentRight - contentLeft, contentBottom - contentTop)) {
+            scroll = Math.max(0, Math.min(maxScroll, scroll - (int) Math.round(vertical * 24)));
+            return true;
+        }
+        return super.mouseScrolled(x, y, horizontal, vertical);
     }
 
     @Override
     public boolean mouseClicked(MouseButtonEvent click, boolean doubled) {
         double mouseX = click.x(), mouseY = click.y();
+        if (ripples.size() >= 8) ripples.removeFirst();
+        ripples.addLast(new ClickRipple((float) mouseX, (float) mouseY, System.nanoTime()));
         int button = click.button();
 
+        if (closing) return true;
+        searchFocused = button == 0 && inside(mouseX, mouseY, contentLeft, contentTop - 22,
+                contentRight - contentLeft, 15);
+        if (searchFocused) return true;
+        int rowHeight = categories.get(1).y - categories.getFirst().y;
         for (Category cat : categories) {
-            for (ModuleEntry module : cat.modules) {
-                if (mouseX >= module.x && mouseX <= module.x + module.width && mouseY >= module.y && mouseY <= module.y + module.height) {
-                    if (button == 0) { module.enabled = !module.enabled; updateModuleConfig(module.name, module.enabled); return true; }
-                    if (button == 1) { module.expanded = !module.expanded; return true; }
+            if (button == 0 && inside(mouseX, mouseY, cat.x, cat.y, cat.width, rowHeight - 2)) {
+                if (selected == cat) return true;
+                selected = cat;
+                tabAnim = 0f;
+                displayedScroll = 0f;
+                scroll = 0;
+                return true;
+            }
+        }
+        if (!inside(mouseX, mouseY, contentLeft, contentTop, contentRight - contentLeft, contentBottom - contentTop)) {
+            return super.mouseClicked(click, doubled);
+        }
+        for (ModuleEntry module : selected.modules) {
+            if (!module.available || !matchesSearch(module)) continue;
+            if (mouseX >= module.x && mouseX <= module.x + module.width && mouseY >= module.y && mouseY <= module.y + module.height) {
+                if (button == 0) { module.enabled = !module.enabled; MenuSounds.play(module.enabled ? "FunctionOn" : "FunctionOff"); updateModuleConfig(module.name, module.enabled); return true; }
+                if (button == 1) { module.expanded = !module.expanded; return true; }
+            }
+            if (module.expanded && mouseY < module.settingsBottom && mouseY >= module.y + module.height) {
+                for (SettingEntry s : module.settings) {
+                    if (!s.visible.getAsBoolean()) continue;
+                    if (button == 0 && mouseX >= s.x && mouseX <= s.x + s.width && mouseY >= s.y && mouseY <= s.y + 14) {
+                        s.value = Math.max(0f, Math.min(1f, (float)((mouseX - (s.x + 2)) / (s.width - 4))));
+                        s.onChange.accept(s.value);
+                        draggingSetting = s;
+                        return true;
+                    }
                 }
-                if (module.expandAnim > 0.01f) {
-                    for (SettingEntry s : module.settings) {
-                        if (!s.visible.getAsBoolean()) continue;
-                        if (mouseX >= s.x && mouseX <= s.x + s.width && mouseY >= s.y && mouseY <= s.y + 14) {
-                            s.value = Math.max(0f, Math.min(1f, (float)((mouseX - (s.x + 2)) / (s.width - 4))));
-                            s.onChange.accept(s.value);
-                            draggingSetting = s;
+                for (BooleanSetting b : module.booleans) {
+                    if (!b.visible.getAsBoolean()) continue;
+                    if (mouseX >= b.x && mouseX <= b.x + b.width && mouseY >= b.y && mouseY <= b.y + b.height) {
+                        if (button == 0) { b.value = !b.value; b.onChange.accept(b.value); return true; }
+                    }
+                }
+                for (ModeSetting m : module.modes) {
+                    if (!m.visible.getAsBoolean()) continue;
+                    if (mouseX >= m.x && mouseX <= m.x + m.width && mouseY >= m.y && mouseY <= m.y + m.height) {
+                        if (button == 0) { m.index = (m.index + 1) % m.options.length; m.onChange.accept(m.index); return true; }
+                    }
+                }
+                for (ColorSetting c : module.colors) {
+                    if (!c.visible.getAsBoolean()) continue;
+                    if (mouseX >= c.x + c.width - 14 && mouseX <= c.x + c.width - 4 && mouseY >= c.y - 1 && mouseY <= c.y + 9) {
+                        if (button == 0 || button == 1) {
+                            float[] hsv = java.awt.Color.RGBtoHSB(c.color >> 16, (c.color >> 8) & 255, c.color & 255, null);
+                            float hue = (hsv[0] + (button == 0 ? 1f / 12 : 11f / 12)) % 1f;
+                            c.color = java.awt.Color.HSBtoRGB(hue, Math.max(0.55f, hsv[1]), Math.max(0.65f, hsv[2])) & 0xFFFFFF;
+                            c.onChange.accept(c.color);
                             return true;
-                        }
-                    }
-                    for (BooleanSetting b : module.booleans) {
-                        if (!b.visible.getAsBoolean()) continue;
-                        if (mouseX >= b.x && mouseX <= b.x + b.width && mouseY >= b.y && mouseY <= b.y + b.height) {
-                            if (button == 0) { b.value = !b.value; b.onChange.accept(b.value); return true; }
-                        }
-                    }
-                    for (ModeSetting m : module.modes) {
-                        if (!m.visible.getAsBoolean()) continue;
-                        if (mouseX >= m.x && mouseX <= m.x + m.width && mouseY >= m.y && mouseY <= m.y + m.height) {
-                            if (button == 0) { m.index = (m.index + 1) % m.options.length; m.onChange.accept(m.index); return true; }
-                        }
-                    }
-                    for (ColorSetting c : module.colors) {
-                        if (!c.visible.getAsBoolean()) continue;
-                        if (mouseX >= c.x + c.width - 14 && mouseX <= c.x + c.width - 4 && mouseY >= c.y - 1 && mouseY <= c.y + 9) {
-                            if (button == 0) { c.open = !c.open; return true; }
                         }
                     }
                 }
@@ -508,14 +704,27 @@ public class ClickGuiScreen extends Screen {
 
     @Override
     public boolean keyPressed(KeyEvent event) {
-        if (event.key() == GLFW.GLFW_KEY_BACKSPACE) { if (!searchQuery.isEmpty()) searchQuery = searchQuery.substring(0, searchQuery.length() - 1); return true; }
+        if (event.key() == GLFW.GLFW_KEY_RIGHT_SHIFT) {
+            onClose();
+            return true;
+        }
+        if (searchFocused && event.key() == GLFW.GLFW_KEY_BACKSPACE) {
+            if (!searchQuery.isEmpty()) {
+                searchQuery = searchQuery.substring(0, searchQuery.offsetByCodePoints(searchQuery.length(), -1));
+                scroll = 0;
+            }
+            return true;
+        }
         return super.keyPressed(event);
     }
 
     @Override
     public boolean charTyped(CharacterEvent event) {
-        char c = (char) event.codepoint();
-        if (c >= 32 && c < 127) { searchQuery += c; return true; }
+        if (searchFocused && !Character.isISOControl(event.codepoint()) && searchQuery.length() < 48) {
+            searchQuery += Character.toString(event.codepoint());
+            scroll = 0;
+            return true;
+        }
         return super.charTyped(event);
     }
 
@@ -542,12 +751,14 @@ public class ClickGuiScreen extends Screen {
             case "FullBright" -> BiwerVisualsClient.CONFIG.fullBrightEnabled = state;
             case "Crosshair" -> BiwerVisualsClient.CONFIG.crosshairEnabled = state;
             case "SwingAnimation" -> BiwerVisualsClient.CONFIG.swingAnimationEnabled = state;
+            default -> VisualEffects.toggle(name, state);
             case "SeeInvisibles" -> BiwerVisualsClient.CONFIG.seeInvisiblesEnabled = state;
         }
     }
 
     @Override
     public void onClose() {
+        if (!closing) MenuSounds.play("ClickGuiClose");
         closing = true;
     }
 

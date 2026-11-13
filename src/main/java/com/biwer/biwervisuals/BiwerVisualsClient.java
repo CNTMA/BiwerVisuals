@@ -85,6 +85,7 @@ public class BiwerVisualsClient implements ClientModInitializer {
         JumpCircles.init();
 
         CustomSky.init();
+        VisualEffects.init();
 
         AutoTotem.init();
 
@@ -97,6 +98,9 @@ public class BiwerVisualsClient implements ClientModInitializer {
 
         // 5. Тик (открытие меню)
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            if (client.screen != null && client.screen.getClass() == net.minecraft.client.gui.screens.TitleScreen.class) {
+                client.setScreen(new MainMenuScreen());
+            }
             while (openGuiKey.consumeClick()) {
                 if (client.screen == null) {
                     client.setScreen(new ClickGuiScreen(null));
